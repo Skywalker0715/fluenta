@@ -1,0 +1,12 @@
+.env
+myenv/
+data/
+__pycache__/
+.vscode/
+*.pyc
+test.mp3
+test.wav
+testwav/
+AGENTS.md
+_backup/
+TASKS.md

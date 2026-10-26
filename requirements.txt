@@ -1,0 +1,9 @@
+streamlit>=1.40
+python-dotenv
+requests
+google-genai
+transformers
+torch
+python-docx
+sentencepiece
+sacremoses
