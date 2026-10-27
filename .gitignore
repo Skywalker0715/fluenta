@@ -10,3 +10,4 @@ testwav/
 AGENTS.md
 _backup/
 TASKS.md
+.streamlit/secrets.toml

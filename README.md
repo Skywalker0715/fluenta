@@ -23,7 +23,7 @@ Screenshot akan ditambahkan.
 ## Arsitektur
 
 ```
-UI (Streamlit: app.py, halaman di pages/)
+UI (Streamlit: app.py, halaman di views/)
    |
    +-- services/llm.py      -> Google Gemini (ask_tutor, generate_text)
    +-- services/stt.py      -> Deepgram REST (speech_to_text)
@@ -114,9 +114,10 @@ Translator/
 │   ├── ARCHITECTURE.md
 │   ├── PRD.md
 │   └── TASKS.md
-├── pages/
-│   ├── 1_Dokumen.py
-│   └── 2_Terjemah.py
+├── views/
+│   ├── chat.py
+│   ├── dokumen.py
+│   └── terjemah.py
 └── services/
     ├── __init__.py
     ├── docs.py

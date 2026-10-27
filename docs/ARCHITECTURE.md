@@ -3,6 +3,8 @@
 ```
 app.py (Streamlit UI)
    |
+   +-- views/ (chat.py, dokumen.py, terjemah.py)
+   |
    +-- services/ (tanpa import streamlit)
    |     stt.py       speech_to_text(audio_bytes, lang="en", content_type="audio/wav") -> str
    |     llm.py       ask_tutor(history, lang="en", level="intermediate") -> str

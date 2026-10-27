@@ -4,8 +4,6 @@ from pathlib import Path
 import db
 from services.docs import process_document, to_docx_bytes
 
-st.set_page_config(page_title="Fluenta", page_icon="assets/icon.png")
-
 st.title("Dokumen")
 
 state = st.session_state

@@ -2,8 +2,6 @@ import streamlit as st
 
 from services.translate import translate_id_en, translate_text
 
-st.set_page_config(page_title="Fluenta", page_icon="assets/icon.png")
-
 st.title("Terjemah")
 
 text = st.text_area("Teks", height=200)
