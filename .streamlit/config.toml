@@ -1,2 +1,6 @@
 [client]
 toolbarMode = "viewer"
+
+
+primaryColor = "#6366f1"
+baseRadius = "large"

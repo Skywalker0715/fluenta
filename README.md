@@ -15,6 +15,7 @@ Fluenta adalah aplikasi Streamlit untuk belajar bahasa Inggris melalui percakapa
 - Riwayat sesi chat tersimpan di SQLite, daftar sesi ditampilkan di sidebar.
 - Halaman Dokumen: unggah PDF/DOCX/TXT, terjemahkan atau rangkum, unduh hasil TXT/DOCX.
 - Halaman Terjemah: terjemahkan teks dengan model lokal Indonesia-Inggris atau Gemini.
+- Halaman Progres: statistik belajar (sesi, pesan kamu, koreksi), koreksi per hari, dan riwayat koreksi.
 
 ## Tampilan
 
@@ -94,6 +95,7 @@ Semua variabel dibaca dari `.env` melalui `os.getenv`. Tidak ada kunci yang ditu
 - Bahasa dan level: pilih bahasa belajar dan level kesulitan di sidebar sebelum memulai percakapan.
 - Dokumen: buka halaman Dokumen, unggah file, pilih tugas (Terjemahkan atau Rangkum) dan bahasa target, klik Proses, lalu unduh hasil dalam TXT atau DOCX.
 - Terjemah: buka halaman Terjemah, masukkan teks, pilih mesin (model lokal Indonesia-Inggris atau Gemini), klik Terjemahkan.
+- Progres: buka halaman Progres untuk melihat statistik belajar dan riwayat koreksi.
 
 ## Struktur proyek
 
@@ -117,11 +119,13 @@ Translator/
 ├── views/
 │   ├── chat.py
 │   ├── dokumen.py
+│   ├── progres.py
 │   └── terjemah.py
 └── services/
     ├── __init__.py
     ├── docs.py
     ├── llm.py
+    ├── progress.py
     ├── stt.py
     ├── tts.py
     └── translate.py

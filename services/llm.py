@@ -1,5 +1,6 @@
 import os
 import re
+import time
 
 from dotenv import load_dotenv
 from google import genai
@@ -22,6 +23,26 @@ SYSTEM_PROMPT = (
 _FIX_LINE = re.compile(r"^Fix:\s*", re.MULTILINE)
 
 
+def _is_transient_error(exc: Exception) -> bool:
+    code = getattr(exc, "code", None)
+    if isinstance(code, int) and 500 <= code < 600:
+        return True
+    message = str(exc).lower()
+    return "read timeout" in message or "deadline exceeded" in message
+
+
+def _generate_with_retry(
+    client: genai.Client, model: str, contents: list, config: types.GenerateContentConfig
+):
+    try:
+        return client.models.generate_content(model=model, contents=contents, config=config)
+    except Exception as exc:
+        if not _is_transient_error(exc):
+            raise
+        time.sleep(2)
+        return client.models.generate_content(model=model, contents=contents, config=config)
+
+
 def ask_tutor(history: list[dict], lang: str = "en", level: str = "intermediate") -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     model = os.getenv("GEMINI_MODEL")
@@ -40,12 +61,10 @@ def ask_tutor(history: list[dict], lang: str = "en", level: str = "intermediate"
         thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
     client = genai.Client(
-        api_key=api_key, http_options=types.HttpOptions(timeout=20000)
+        api_key=api_key, http_options=types.HttpOptions(timeout=30000)
     )
     try:
-        response = client.models.generate_content(
-            model=model, contents=contents, config=config
-        )
+        response = _generate_with_retry(client, model, contents, config)
     except Exception as exc:
         if getattr(exc, "code", None) == 429:
             raise RuntimeError(
@@ -73,7 +92,7 @@ def split_correction(reply: str) -> tuple[str, str | None]:
     return reply[: match.start()].strip(), reply[match.end():].strip()
 
 
-def generate_text(contents: list, system_instruction: str, timeout_ms: int = 20000) -> str:
+def generate_text(contents: list, system_instruction: str, timeout_ms: int = 30000) -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     model = os.getenv("GEMINI_MODEL")
     if not api_key or not model:
@@ -87,9 +106,7 @@ def generate_text(contents: list, system_instruction: str, timeout_ms: int = 200
         api_key=api_key, http_options=types.HttpOptions(timeout=timeout_ms)
     )
     try:
-        response = client.models.generate_content(
-            model=model, contents=contents, config=config
-        )
+        response = _generate_with_retry(client, model, contents, config)
     except Exception as exc:
         if getattr(exc, "code", None) == 429:
             raise RuntimeError(

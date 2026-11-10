@@ -3,14 +3,17 @@
 ```
 app.py (Streamlit UI)
    |
-   +-- views/ (chat.py, dokumen.py, terjemah.py)
+   +-- views/ (chat.py, dokumen.py, progres.py, terjemah.py)
    |
    +-- services/ (tanpa import streamlit)
    |     stt.py       speech_to_text(audio_bytes, lang="en", content_type="audio/wav") -> str
    |     llm.py       ask_tutor(history, lang="en", level="intermediate") -> str
    |     |            split_correction(reply) -> tuple[str, str | None]
-   |     |            generate_text(contents, system_instruction, timeout_ms=20000) -> str
+   |     |            generate_text(contents, system_instruction, timeout_ms=30000) -> str
    |     |            speakable(conversation) -> str
+   |     progress.py  get_stats() -> dict
+   |     |            recent_corrections(limit: int = 20) -> list[dict]
+   |     |            corrections_per_day(days: int = 14) -> list[dict]
    |     tts.py       text_to_speech(text, lang="en") -> bytes (mp3)
    |     translate.py translate_id_en(text) -> str
    |     |            translate_text(text, target_language) -> str
