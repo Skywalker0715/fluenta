@@ -1,154 +1,184 @@
-# Fluenta
+<p align="center">
+  <img src="assets/logo.png" alt="Fluenta" width="420">
+</p>
 
-Aplikasi pembelajaran bahasa Inggris untuk penutur Indonesia dengan chat teks dan suara, koreksi grammar, dan pemrosesan dokumen.
+<p align="center">
+  <b>Teman latihan bahasa asing berbasis AI.</b><br>
+  Ngobrol lewat teks atau suara, dapat koreksi grammar dalam bahasa Indonesia.
+</p>
 
-## Ringkasan
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/Streamlit-1.66-FF4B4B?logo=streamlit&logoColor=white" alt="Streamlit">
+  <img src="https://img.shields.io/badge/Gemini-API-4285F4?logo=googlegemini&logoColor=white" alt="Gemini">
+  <img src="https://img.shields.io/badge/Database-SQLite-003B57?logo=sqlite&logoColor=white" alt="SQLite">
+  <img src="https://img.shields.io/badge/Lisensi-Apache%202.0-D22128" alt="Apache 2.0">
+</p>
 
-Fluenta adalah aplikasi Streamlit untuk belajar bahasa Inggris melalui percakapan dengan tutor AI. Dibuat untuk pemelajar Indonesia yang ingin berlatih bahasa Inggris, dengan dukungan bahasa Mandarin dan Jepang sebagai bahasa belajar. Aplikasi mendukung chat teks dan suara, koreksi grammar dengan penjelasan dalam Bahasa Indonesia, serta halaman untuk terjemahan dan pemrosesan dokumen. Riwayat sesi disimpan di database SQLite lokal.
+<p align="center">
+  <a href="#fitur">Fitur</a> ·
+  <a href="#cara-kerja">Cara kerja</a> ·
+  <a href="#mulai-cepat">Mulai cepat</a> ·
+  <a href="#konfigurasi">Konfigurasi</a> ·
+  <a href="#batasan-yang-diketahui">Batasan</a> ·
+  <a href="#lisensi">Lisensi</a>
+</p>
+
+---
+
+## Tentang
+
+Fluenta adalah aplikasi Streamlit untuk berlatih bahasa Inggris lewat percakapan dengan tutor AI. Dibuat untuk pemelajar Indonesia, dengan Mandarin dan Jepang sebagai bahasa belajar tambahan. Kamu bisa mengetik atau berbicara langsung, dan tutor membalas dengan teks dan suara. Kesalahan grammar dan tense dikoreksi lengkap dengan penjelasan berbahasa Indonesia.
 
 ## Fitur
 
-- Chat teks dan suara dengan tutor AI (Gemini), balasan dapat diutarakan melalui TTS.
-- Koreksi grammar dengan penjelasan dalam Bahasa Indonesia (baris "Fix: ...").
-- Pilihan bahasa belajar (Inggris, Mandarin, Jepang) dan level (beginner, intermediate, advanced).
-- Kirim otomatis saat diam melalui JavaScript yang disuntikkan ke antarmuka Streamlit.
-- Riwayat sesi chat tersimpan di SQLite, daftar sesi ditampilkan di sidebar.
-- Halaman Dokumen: unggah PDF/DOCX/TXT, terjemahkan atau rangkum, unduh hasil TXT/DOCX.
-- Halaman Terjemah: terjemahkan teks dengan model lokal Indonesia-Inggris atau Gemini.
-- Halaman Progres: statistik belajar (sesi, pesan kamu, koreksi), koreksi per hari, dan riwayat koreksi.
+| Fitur | Keterangan |
+|---|---|
+| Chat teks dan suara | Rekam suara, kirim otomatis saat berhenti bicara, balasan dibacakan |
+| Koreksi grammar | Kalimat diperbaiki dan aturannya dijelaskan dalam bahasa Indonesia |
+| Banyak bahasa | Inggris, Mandarin (dengan pinyin), dan Jepang (dengan romaji) |
+| Tiga level | Beginner, intermediate, dan advanced menyesuaikan panjang dan kerumitan balasan |
+| Riwayat sesi | Semua percakapan tersimpan di SQLite dan bisa dibuka lagi |
+| Halaman Dokumen | Unggah PDF, DOCX, TXT, atau gambar, lalu terjemahkan atau rangkum dan unduh hasilnya |
+| Halaman Terjemah | Model lokal Indonesia ke Inggris, atau Gemini untuk bahasa lain |
+| Halaman Progres | Statistik belajar, koreksi per hari, dan daftar kesalahan terbaru |
 
 ## Tampilan
 
-Screenshot akan ditambahkan.
+<!--
+Tambahkan screenshot ke docs/screenshots/, lalu hapus tanda komentar:
 
-## Arsitektur
+<p align="center">
+  <img src="docs/screenshots/chat.png" alt="Halaman Chat" width="800">
+</p>
+<p align="center">
+  <img src="docs/screenshots/progres.png" alt="Halaman Progres" width="800">
+</p>
+-->
+
+_Screenshot akan ditambahkan._
+
+## Cara kerja
+
+```mermaid
+flowchart LR
+    U([Pengguna]) --> UI["Streamlit<br/>app.py dan views/"]
+    UI --> LLM["services/llm.py<br/>Gemini"]
+    UI --> STT["services/stt.py<br/>Deepgram"]
+    UI --> TTS["services/tts.py<br/>ElevenLabs"]
+    UI --> TR["services/translate.py<br/>Opus-MT lokal / Gemini"]
+    UI --> DOC["services/docs.py<br/>Gemini dan python-docx"]
+    UI --> DB[("SQLite<br/>data/app.db")]
+```
+
+Alur percakapan suara:
 
 ```
-UI (Streamlit: app.py, halaman di views/)
-   |
-   +-- services/llm.py      -> Google Gemini (ask_tutor, generate_text)
-   +-- services/stt.py      -> Deepgram REST (speech_to_text)
-   +-- services/tts.py      -> ElevenLabs REST (text_to_speech)
-   +-- services/translate.py-> Opus-MT lokal atau Gemini (translate_id_en, translate_text)
-   +-- services/docs.py     -> Gemini / python-docx (process_document)
-   +-- db.py                -> SQLite (data/app.db)
+Mikrofon  ->  Deepgram (suara ke teks)  ->  Gemini (tutor dan koreksi)  ->  ElevenLabs (teks ke suara)  ->  Dibacakan
 ```
 
-| Layanan | Tanggung jawab |
-| llm | Tutor AI via Gemini: jawab chat, koreksi grammar, terjemahan teks. |
-| stt | Ubah ucapan menjadi teks via Deepgram REST. |
-| tts | Ubah teks menjadi suara MP3 via ElevenLabs REST. |
-| translate | Terjemahan Indonesia ke Inggris via model lokal Opus-MT, atau bahasa lain via Gemini. |
-| docs | Ekstrak isi dokumen dan terjemahkan atau rangkumkan hasilnya. |
+| Komponen | Teknologi | Fungsi |
+|---|---|---|
+| Antarmuka | Streamlit | Chat, navigasi, dan halaman aplikasi |
+| Tutor dan dokumen | Google Gemini (`google-genai`) | Balasan, koreksi, terjemahan, ringkasan |
+| Suara ke teks | Deepgram | Transkripsi ucapan |
+| Teks ke suara | ElevenLabs | Suara balasan tutor |
+| Terjemahan lokal | `transformers`, `Helsinki-NLP/opus-mt-id-en` | Indonesia ke Inggris tanpa API |
+| Penyimpanan | SQLite | Riwayat sesi, dokumen, dan statistik |
 
-## Teknologi
+## Mulai cepat
 
-| Komponen | Teknologi | Tujuan |
-| Antarmuka | Streamlit | Antarmuka chat dan halaman aplikasi. |
-| LLM | Google Gemini (paket google-genai) | Tutor AI, terjemahan teks, pemrosesan dokumen. |
-| STT | Deepgram REST | Transkripsi ucapan menjadi teks. |
-| TTS | ElevenLabs REST | Sintesis suara balasan tutor. |
-| Terjemahan lokal | transformers, Helsinki-NLP/opus-mt-id-en | Terjemahan Indonesia ke Inggris tanpa API. |
-| Database | SQLite (sqlite3 bawaan) | Riwayat sesi chat dan dokumen di data/app.db. |
-| Variabel lingkungan | python-dotenv | Memuat kunci API dari file .env. |
-
-## Prasyarat
-
-- Python 3.12
-- Kunci API Google AI Studio (Gemini)
-- Kunci API Deepgram
-- Kunci API ElevenLabs
-- Dapat dijalankan di Windows, macOS, dan Linux dengan Python 3.12.
-
-## Instalasi
-
-Buka PowerShell di folder proyek:
+**Prasyarat:** Python 3.12 dan tiga kunci API: Google AI Studio (Gemini), Deepgram, dan ElevenLabs. Aplikasi dikembangkan dan diuji di Windows 11.
 
 ```powershell
+git clone https://github.com/Skywalker0715/fluenta.git
+cd fluenta
 python -m venv myenv
 .\myenv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Isi semua kunci API di file `.env` yang baru dibuat, lalu jalankan:
+Isi kunci API di `.env`, lalu jalankan:
 
 ```powershell
-.\myenv\Scripts\python.exe -m streamlit run app.py
+streamlit run app.py
 ```
+
+Aplikasi terbuka di `http://localhost:8501`. Pemakaian pertama mengunduh model terjemahan lokal (sekitar 300 MB).
 
 ## Konfigurasi
 
-Semua variabel dibaca dari `.env` melalui `os.getenv`. Tidak ada kunci yang ditulis ke dalam kode.
+Semua nilai dibaca dari `.env`. Tidak ada kunci yang ditulis di dalam kode.
 
-| Variabel | Keterangan |
-| GEMINI_API_KEY | Kunci API Google AI Studio untuk Gemini. Wajib diisi. |
-| DEEPGRAM_API_KEY | Kunci API Deepgram untuk pengucapan-ke-teks. Wajib diisi. |
-| ELEVENLABS_API_KEY | Kunci API ElevenLabs untuk teks-ke-suara. Wajib diisi. |
-| GEMINI_MODEL | Model Gemini yang digunakan (contoh: gemini-2.5-flash). Harus merupakan model yang tersedia untuk kunci Anda. Opsional. |
-| ELEVEN_VOICE_ID | ID suara ElevenLabs (contoh ID suara premade/bawaan). Akun gratis ElevenLabs tidak dapat menggunakan suara dari perpustakaan melalui API; gunakan ID suara bawaan (premade voice id). Opsional. |
+| Variabel | Wajib | Keterangan |
+|---|---|---|
+| `GEMINI_API_KEY` | Ya | Kunci dari Google AI Studio |
+| `GEMINI_MODEL` | Ya | Nama model Flash yang tersedia untuk kuncimu, misalnya `gemini-3.6-flash`. Nama model sering berganti, jadi cek daftar model akunmu |
+| `DEEPGRAM_API_KEY` | Ya | Kunci Deepgram |
+| `ELEVENLABS_API_KEY` | Ya | Kunci ElevenLabs |
+| `ELEVEN_VOICE_ID` | Ya | ID suara kategori `premade`. Akun gratis tidak bisa memakai suara dari voice library lewat API (error 402) |
 
 ## Penggunaan
 
-- Chat: ketik pesan di kolom input chat, atau rekam suara untuk ditranskripsi terlebih dahulu. Balasan tutor ditampilkan bersama koreksi grammar jika terdapat kesalahan.
-- Suara: nyalakan toggle "Balasan bersuara" di sidebar agar balasan tutor diutarakan sebagai audio.
-- Bahasa dan level: pilih bahasa belajar dan level kesulitan di sidebar sebelum memulai percakapan.
-- Dokumen: buka halaman Dokumen, unggah file, pilih tugas (Terjemahkan atau Rangkum) dan bahasa target, klik Proses, lalu unduh hasil dalam TXT atau DOCX.
-- Terjemah: buka halaman Terjemah, masukkan teks, pilih mesin (model lokal Indonesia-Inggris atau Gemini), klik Terjemahkan.
-- Progres: buka halaman Progres untuk melihat statistik belajar dan riwayat koreksi.
+1. **Chat:** ketik pesan, atau klik ikon mikrofon di kolom chat, bicara, lalu diam. Pesan terkirim otomatis.
+2. **Bahasa dan level:** pilih di sidebar sebelum mulai berlatih.
+3. **Balasan bersuara:** nyalakan atau matikan lewat saklar di sidebar. Matikan untuk menghemat kuota ElevenLabs.
+4. **Dokumen:** unggah file, pilih Terjemahkan atau Rangkum, lalu unduh hasilnya sebagai TXT atau DOCX.
+5. **Terjemah:** pilih mesin lokal untuk Indonesia ke Inggris, atau Gemini untuk bahasa lain.
+6. **Progres:** lihat statistik dan daftar koreksi dari percakapanmu.
 
 ## Struktur proyek
 
 ```
-Translator/
-├── .env
-├── .env.example
-├── .gitignore
-├── AGENTS.md
-├── app.py
-├── db.py
-├── README.md
-├── requirements.txt
-├── assets/
-│   ├── auto_send.js
-│   └── icon.png
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── PRD.md
-│   └── TASKS.md
+fluenta/
+├── app.py              Router navigasi dan pengaturan halaman
+├── db.py               Akses SQLite
 ├── views/
-│   ├── chat.py
-│   ├── dokumen.py
-│   ├── progres.py
-│   └── terjemah.py
-└── services/
-    ├── __init__.py
-    ├── docs.py
-    ├── llm.py
-    ├── progress.py
-    ├── stt.py
-    ├── tts.py
-    └── translate.py
+│   ├── chat.py         Halaman Chat
+│   ├── dokumen.py      Halaman Dokumen
+│   ├── terjemah.py     Halaman Terjemah
+│   └── progres.py      Halaman Progres
+├── services/           Logika bisnis (tanpa import Streamlit)
+│   ├── llm.py
+│   ├── stt.py
+│   ├── tts.py
+│   ├── translate.py
+│   ├── docs.py
+│   └── progress.py
+├── assets/             Logo, ikon, dan skrip kirim otomatis
+├── docs/               Dokumen perencanaan dan arsitektur
+├── .streamlit/         Konfigurasi Streamlit
+├── .env.example        Contoh konfigurasi
+├── LICENSE             Lisensi Apache 2.0
+├── NOTICE              Pernyataan hak cipta
+└── requirements.txt
 ```
+
+Folder `data/` dibuat otomatis saat aplikasi pertama dijalankan dan tidak ikut repositori.
 
 ## Batasan yang diketahui
 
-- Kuota gratis Gemini terbatas dan data pengguna diproses oleh Google.
-- Kuota gratis ElevenLabs terbatas.
-- Fitur kirim otomatis bergantung pada JavaScript yang disuntikkan ke dalam Streamlit dan mengandalkan elemen internal Streamlit, sehingga dapat rusak setelah pembaruan Streamlit.
-- Kualitas STT dan TTS untuk Mandarin dan Jepang belum diverifikasi.
-- Tidak ada penilaian ucapan (pronunciation scoring).
+- **Kuota gratis terbatas.** Gemini memiliki batas permintaan, dan ElevenLabs sekitar 10.000 karakter per bulan. Pada tier gratis, Google dapat memakai isi percakapan untuk meningkatkan produknya, jadi jangan kirim data pribadi.
+- **Kirim otomatis saat diam** memakai JavaScript yang bergantung pada elemen internal Streamlit, sehingga bisa berhenti bekerja setelah pembaruan Streamlit.
+- **Mandarin dan Jepang:** koreksi dan balasan teks sudah diuji, tetapi pengenalan ucapan dan kualitas suara untuk dua bahasa itu belum diverifikasi.
+- **Belum ada penilaian pelafalan** (pronunciation scoring).
+- Berjalan lokal untuk satu pengguna, tanpa login.
 
 ## Peta jalan
 
-Idea (bukan komitmen):
-- Penilaian ucapan (pronunciation scoring).
-- Deployment.
+Ide ke depan, bukan komitmen:
+
+- [ ] Penilaian pelafalan
+- [ ] Latihan ulang dari kesalahan lama
+- [ ] Deployment dan dukungan banyak pengguna
 
 ## Keamanan
 
-File `.env` tidak boleh dikomit ke repositori. Putar segera setiap kunci API yang telah terpapar.
+`.env` tidak pernah dikomit. Kunci API yang pernah terpapar harus segera dibuat ulang.
 
 ## Lisensi
 
-Belum ditentukan.
+Dirilis dengan lisensi [Apache 2.0](LICENSE). Hak cipta 2026 Rendy Saputra.
+
+Layanan dan model pihak ketiga yang dipakai (Gemini, Deepgram, ElevenLabs, Helsinki-NLP) memiliki ketentuan masing-masing.
