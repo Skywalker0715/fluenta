@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from .fixparse import parse_fix, TAG_LABELS
+
 load_dotenv()
 
 SYSTEM_PROMPT = (
@@ -15,12 +17,24 @@ SYSTEM_PROMPT = (
     "IGNORE punctuation, capitalization, and likely transcription glitches. Only "
     "correct real mistakes in grammar, tense, word choice, or unnatural phrasing. "
     "If the user's last message has a real mistake, add a final line starting "
-    "exactly with 'Fix: ' containing the corrected sentence, then a short "
-    "explanation in Indonesian that names the rule (for example past tense or "
-    "articles). If there is no real mistake, do not add a Fix line."
+    "exactly with 'Fix: ' in a single line: 'Fix: <corrected sentence> || "
+    "<short explanation in Indonesian naming the rule> || <tag>', where tag is "
+    "exactly one of: past_tense, present_tense, future_tense, articles, "
+    "prepositions, subject_verb_agreement, plural_singular, word_order, "
+    "word_choice, collocation, code_mixing, other. If there is no real "
+    "mistake, do not add a Fix line."
 )
 
 _FIX_LINE = re.compile(r"^Fix:\s*", re.MULTILINE)
+
+_MIXED_INSTRUCTION = (
+    "The user may mix Indonesian words into the message. Do NOT treat the Indonesian "
+    "words as mistakes. Reply naturally to what the user means. If the message "
+    "contains Indonesian words, add the Fix line where the corrected sentence is the "
+    "natural {language} version of the WHOLE message, the explanation says briefly "
+    "in Indonesian how the Indonesian parts are said naturally, and the tag is "
+    "code_mixing."
+)
 
 
 def _is_transient_error(exc: Exception) -> bool:
@@ -43,7 +57,9 @@ def _generate_with_retry(
         return client.models.generate_content(model=model, contents=contents, config=config)
 
 
-def ask_tutor(history: list[dict], lang: str = "en", level: str = "intermediate") -> str:
+def ask_tutor(
+    history: list[dict], lang: str = "en", level: str = "intermediate", mixed: bool = False
+) -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     model = os.getenv("GEMINI_MODEL")
     if not api_key or not model:
@@ -57,7 +73,7 @@ def ask_tutor(history: list[dict], lang: str = "en", level: str = "intermediate"
         for item in history
     ]
     config = types.GenerateContentConfig(
-        system_instruction=_build_system_prompt(lang, level),
+        system_instruction=_build_system_prompt(lang, level, mixed),
         thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
     client = genai.Client(
@@ -127,7 +143,7 @@ def generate_text(contents: list, system_instruction: str, timeout_ms: int = 300
     return response.text.strip()
 
 
-def _build_system_prompt(lang: str, level: str) -> str:
+def _build_system_prompt(lang: str, level: str, mixed: bool = False) -> str:
     if lang not in ("en", "zh", "ja") or level not in (
         "beginner",
         "intermediate",
@@ -153,6 +169,9 @@ def _build_system_prompt(lang: str, level: str) -> str:
             "\nReply in Japanese. Add a line starting exactly with 'Romaji: ' and a line "
             "starting exactly with 'Arti: ' (Indonesian meaning). Place any Fix line last."
         )
+    if mixed:
+        _nama_bahasa = {"en": "English", "zh": "Mandarin", "ja": "Japanese"}
+        prompt += "\n" + _MIXED_INSTRUCTION.format(language=_nama_bahasa[lang])
     return prompt
 
 

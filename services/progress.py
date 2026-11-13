@@ -2,6 +2,8 @@ from contextlib import closing
 
 import db
 
+from services.fixparse import parse_fix, TAG_LABELS
+
 
 def get_stats() -> dict:
     with closing(db.get_connection()) as conn:
@@ -64,3 +66,21 @@ def corrections_per_day(days: int = 14) -> list[dict]:
             (f"-{days} days",),
         ).fetchall()
     return [{"day": row["day"], "count": row["count"]} for row in rows]
+
+
+def error_patterns(limit: int = 10) -> list[dict]:
+    with closing(db.get_connection()) as conn:
+        rows = conn.execute(
+            "SELECT correction FROM messages WHERE correction IS NOT NULL"
+        ).fetchall()
+    counts: dict[str, int] = {}
+    for row in rows:
+        hasil = parse_fix(row["correction"])
+        if hasil["structured"]:
+            tag = hasil["tag"]
+            counts[tag] = counts.get(tag, 0) + 1
+    urut = sorted(counts.items(), key=lambda item: item[1], reverse=True)[:limit]
+    return [
+        {"tag": tag, "label": TAG_LABELS.get(tag, tag), "count": count}
+        for tag, count in urut
+    ]

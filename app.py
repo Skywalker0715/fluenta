@@ -12,6 +12,7 @@ pages = [
     st.Page("views/dokumen.py", title="Dokumen", icon=":material/description:"),
     st.Page("views/terjemah.py", title="Terjemah", icon=":material/translate:"),
     st.Page("views/progres.py", title="Progres", icon=":material/insights:"),
+    st.Page("views/latihan.py", title="Latihan", icon=":material/quiz:"),
 ]
 
 st.navigation(pages).run()

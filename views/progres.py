@@ -1,7 +1,7 @@
 import streamlit as st
 
 import db
-from services.progress import corrections_per_day, get_stats, recent_corrections
+from services.progress import corrections_per_day, error_patterns, get_stats, recent_corrections
 
 st.title("Progres belajar")
 
@@ -14,6 +14,15 @@ kolom3.metric("Koreksi", stats["corrections"])
 harian = corrections_per_day()
 if harian:
     st.bar_chart(harian, x="day", y="count")
+
+polas = error_patterns()
+if polas:
+    st.subheader("Pola kesalahanmu")
+    st.bar_chart(polas, x="label", y="count")
+    teratas = polas[0]
+    st.write(f"Paling sering: {teratas['label']} ({teratas['count']}x)")
+else:
+    st.write("Belum ada data pola. Pola muncul dari koreksi baru di halaman Chat.")
 
 items = recent_corrections()
 if items:

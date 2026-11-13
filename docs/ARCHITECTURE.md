@@ -7,13 +7,22 @@ app.py (Streamlit UI)
    |
    +-- services/ (tanpa import streamlit)
    |     stt.py       speech_to_text(audio_bytes, lang="en", content_type="audio/wav") -> str
-   |     llm.py       ask_tutor(history, lang="en", level="intermediate") -> str
+   |     llm.py       ask_tutor(history, lang="en", level="intermediate", mixed=False) -> str
    |     |            split_correction(reply) -> tuple[str, str | None]
    |     |            generate_text(contents, system_instruction, timeout_ms=30000) -> str
    |     |            speakable(conversation) -> str
+   |     |            parse_fix(text) -> dict (re-exported from fixparse)
+   |     fixparse.py  TAG_LABELS: dict
+   |     |            parse_fix(text: str | None) -> dict
    |     progress.py  get_stats() -> dict
    |     |            recent_corrections(limit: int = 20) -> list[dict]
    |     |            corrections_per_day(days: int = 14) -> list[dict]
+   |     |            error_patterns(limit: int = 10) -> list[dict]
+   |     practice.py  sync() -> int
+   |     |            next_items(limit: int = 5) -> list[dict]
+   |     |            grade(answer, corrected) -> str
+   |     |            record(message_id, result) -> None
+   |     |            stats() -> dict
    |     tts.py       text_to_speech(text, lang="en") -> bytes (mp3)
    |     translate.py translate_id_en(text) -> str
    |     |            translate_text(text, target_language) -> str
@@ -41,3 +50,10 @@ GEMINI_MODEL (opsional), ELEVEN_VOICE_ID (opsional)
 - UI hanya memanggil services dan db.
 - Audio tidak disimpan di DB.
 - Format balasan AI: teks balasan, lalu opsional baris "Fix: ...".
+
+## Format Fix line
+Baris koreksi berupa satu baris dengan pemisah ` || `:
+
+`Fix: <kalimat yang diperbaiki> || <penjelasan singkat dalam bahasa Indonesia yang menamai aturan> || <tag>`
+
+Tag harus salah satu dari: `past_tense`, `present_tense`, `future_tense`, `articles`, `prepositions`, `subject_verb_agreement`, `plural_singular`, `word_order`, `word_choice`, `collocation`, `code_mixing`, `other`. Jika tidak ada kesalahan nyata, baris Fix tidak ditambahkan. Teks lama tanpa pemisah ` || ` dianggap tidak terstruktur (`structured=False`, `corrected=None`, `explanation=teks asli`, `tag="other"`).

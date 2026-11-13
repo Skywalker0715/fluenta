@@ -42,6 +42,9 @@ Fluenta adalah aplikasi Streamlit untuk berlatih bahasa Inggris lewat percakapan
 | Halaman Dokumen | Unggah PDF, DOCX, TXT, atau gambar, lalu terjemahkan atau rangkum dan unduh hasilnya |
 | Halaman Terjemah | Model lokal Indonesia ke Inggris, atau Gemini untuk bahasa lain |
 | Halaman Progres | Statistik belajar, koreksi per hari, dan daftar kesalahan terbaru |
+| Pola kesalahan | Grafik dan urutan tag kesalahan yang paling sering terjadi |
+| Latihan | Latihan ulang dari koreksi baru dengan sistem kotak Leitner |
+| Mode ngomong campur | Menerima campuran kata Indonesia dalam pesan tanpa dianggap kesalahan |
 
 ## Tampilan
 
@@ -138,14 +141,17 @@ fluenta/
 │   ├── chat.py         Halaman Chat
 │   ├── dokumen.py      Halaman Dokumen
 │   ├── terjemah.py     Halaman Terjemah
-│   └── progres.py      Halaman Progres
+│   ├── progres.py      Halaman Progres
+│   └── latihan.py      Halaman Latihan
 ├── services/           Logika bisnis (tanpa import Streamlit)
 │   ├── llm.py
+│   ├── fixparse.py
+│   ├── practice.py
+│   ├── progress.py
 │   ├── stt.py
 │   ├── tts.py
 │   ├── translate.py
-│   ├── docs.py
-│   └── progress.py
+│   └── docs.py
 ├── assets/             Logo, ikon, dan skrip kirim otomatis
 ├── docs/               Dokumen perencanaan dan arsitektur
 ├── .streamlit/         Konfigurasi Streamlit

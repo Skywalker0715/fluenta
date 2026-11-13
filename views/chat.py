@@ -7,6 +7,7 @@ import streamlit.components.v1 as components
 
 import db
 from services.llm import ask_tutor, split_correction, speakable
+from services.fixparse import parse_fix, TAG_LABELS
 from services.stt import speech_to_text
 from services.tts import text_to_speech
 
@@ -86,7 +87,7 @@ def handle_user_message(text: str, speak: bool) -> str | None:
     db.add_message(state.session_id, "user", text)
     state.reply_audio = None
     try:
-        reply = ask_tutor(db.get_messages(state.session_id), lang=lang_code, level=level_belajar)
+        reply = ask_tutor(db.get_messages(state.session_id), lang=lang_code, level=level_belajar, mixed=campur)
     except RuntimeError as exc:
         return str(exc)
     conversation, correction = split_correction(reply)
@@ -105,6 +106,8 @@ with st.sidebar:
     level_belajar = st.select_slider("Level", ["beginner", "intermediate", "advanced"], value="intermediate")
     _KODE_BAHASA = {"English": "en", "Mandarin": "zh", "Japanese": "ja"}
     lang_code = _KODE_BAHASA[bahasa_belajar]
+    campur = st.toggle("Mode ngomong campur", False)
+    st.caption("Paling akurat dengan ketikan.")
 
 prompt = st.chat_input("Tulis atau rekam suaramu...", accept_audio=True)
 error = None
@@ -151,15 +154,22 @@ else:
         role = "user" if message["role"] == "user" else "assistant"
         with st.chat_message(role):
             kelas = "chat-bubble user" if role == "user" else "chat-bubble assistant"
-            st.markdown(f'<div class="{kelas}">{message["text"]}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="{kelas}">{html.escape(message["text"])}</div>', unsafe_allow_html=True)
             if message.get("correction"):
-                st.markdown(
-                    '<div class="correction">'
-                    '<span class="correction-label">Koreksi</span>'
-                    f"{html.escape(message['correction'])}"
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
+                hasil = parse_fix(message["correction"])
+                if hasil["structured"]:
+                    st.markdown("**Koreksi**")
+                    st.write(f"**{hasil['corrected']}**")
+                    st.caption(hasil["explanation"])
+                    st.caption(f"Tag: {TAG_LABELS[hasil['tag']]}")
+                else:
+                    st.markdown(
+                        '<div class="correction">'
+                        '<span class="correction-label">Koreksi</span>'
+                        f"{html.escape(message['correction'])}"
+                        "</div>",
+                        unsafe_allow_html=True,
+                    )
 
 if error:
     st.error(error)
