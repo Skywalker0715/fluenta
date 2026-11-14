@@ -45,21 +45,10 @@ Fluenta adalah aplikasi Streamlit untuk berlatih bahasa Inggris lewat percakapan
 | Pola kesalahan | Grafik dan urutan tag kesalahan yang paling sering terjadi |
 | Latihan | Latihan ulang dari koreksi baru dengan sistem kotak Leitner |
 | Mode ngomong campur | Menerima campuran kata Indonesia dalam pesan tanpa dianggap kesalahan |
+| Koreksi terstruktur | Kalimat benar, penjelasan Indonesia, dan tag jenis kesalahan |
+| Model cadangan | Chat tetap jalan lewat Groq saat Gemini kena batas kuota |
 
-## Tampilan
 
-<!--
-Tambahkan screenshot ke docs/screenshots/, lalu hapus tanda komentar:
-
-<p align="center">
-  <img src="docs/screenshots/chat.png" alt="Halaman Chat" width="800">
-</p>
-<p align="center">
-  <img src="docs/screenshots/progres.png" alt="Halaman Progres" width="800">
-</p>
--->
-
-_Screenshot akan ditambahkan._
 
 ## Cara kerja
 
@@ -72,7 +61,13 @@ flowchart LR
     UI --> TR["services/translate.py<br/>Opus-MT lokal / Gemini"]
     UI --> DOC["services/docs.py<br/>Gemini dan python-docx"]
     UI --> DB[("SQLite<br/>data/app.db")]
+    GQ["Groq<br/>gpt-oss-120b (cadangan)"]
+    LLM -.->|"cadangan saat Gemini kena limit"| GQ
 ```
+
+### Model cadangan
+
+Gemini adalah model utama. Kalau Gemini kena batas kuota (HTTP 429), gangguan server (5xx), atau timeout, chat tutor otomatis dialihkan ke Groq (`openai/gpt-oss-120b`) supaya kamu tetap bisa berlatih. Balasan dari model cadangan diberi label kecil "Dijawab model cadangan". Kalau Gemini normal, Groq tidak dipanggil sama sekali. Cadangan ini opsional: tanpa `GROQ_API_KEY`, aplikasi hanya memakai Gemini.
 
 Alur percakapan suara:
 
@@ -88,10 +83,11 @@ Mikrofon  ->  Deepgram (suara ke teks)  ->  Gemini (tutor dan koreksi)  ->  Elev
 | Teks ke suara | ElevenLabs | Suara balasan tutor |
 | Terjemahan lokal | `transformers`, `Helsinki-NLP/opus-mt-id-en` | Indonesia ke Inggris tanpa API |
 | Penyimpanan | SQLite | Riwayat sesi, dokumen, dan statistik |
+| Model cadangan | Groq (`openai/gpt-oss-120b`) | Menjawab chat tutor saat Gemini kena batas kuota atau gangguan |
 
 ## Mulai cepat
 
-**Prasyarat:** Python 3.12 dan tiga kunci API: Google AI Studio (Gemini), Deepgram, dan ElevenLabs. Aplikasi dikembangkan dan diuji di Windows 11.
+**Prasyarat:** Python 3.12 dan tiga kunci API: Google AI Studio (Gemini), Deepgram, dan ElevenLabs. Kunci Groq bersifat opsional, hanya untuk model cadangan. Aplikasi dikembangkan dan diuji di Windows 11.
 
 ```powershell
 git clone https://github.com/Skywalker0715/fluenta.git
@@ -121,6 +117,8 @@ Semua nilai dibaca dari `.env`. Tidak ada kunci yang ditulis di dalam kode.
 | `DEEPGRAM_API_KEY` | Ya | Kunci Deepgram |
 | `ELEVENLABS_API_KEY` | Ya | Kunci ElevenLabs |
 | `ELEVEN_VOICE_ID` | Ya | ID suara kategori `premade`. Akun gratis tidak bisa memakai suara dari voice library lewat API (error 402) |
+| `GROQ_API_KEY` | Tidak | Kunci Groq untuk model cadangan. Kosongkan untuk menonaktifkan cadangan |
+| `GROQ_MODEL` | Tidak | Model cadangan di Groq, contoh `openai/gpt-oss-120b` |
 
 ## Penggunaan
 
@@ -154,6 +152,7 @@ fluenta/
 │   └── docs.py
 ├── assets/             Logo, ikon, dan skrip kirim otomatis
 ├── docs/               Dokumen perencanaan dan arsitektur
+├── scripts/            Skrip evaluasi dan tes model cadangan
 ├── .streamlit/         Konfigurasi Streamlit
 ├── .env.example        Contoh konfigurasi
 ├── LICENSE             Lisensi Apache 2.0
@@ -170,10 +169,11 @@ Folder `data/` dibuat otomatis saat aplikasi pertama dijalankan dan tidak ikut r
 - **Mandarin dan Jepang:** koreksi dan balasan teks sudah diuji, tetapi pengenalan ucapan dan kualitas suara untuk dua bahasa itu belum diverifikasi.
 - **Belum ada penilaian pelafalan** (pronunciation scoring).
 - Berjalan lokal untuk satu pengguna, tanpa login.
+- **Model cadangan** hanya dipakai saat Gemini kena limit atau gangguan, dan hanya untuk chat tutor. Penjelasan koreksinya bisa lebih singkat daripada Gemini. Groq tier gratis juga punya batas sendiri (contoh limit yang dipublikasikan: 1.000 permintaan per hari dan 8.000 token per menit, per organisasi); angka pastinya ada di akun Groq-mu.
 
 ## Model cadangan dan privasi
 
-Saat Gemini mencapai batas kuota (misalnya HTTP 429 atau 5xx), pesan chat tutor dapat dialirkan ke model cadangan Groq (`openai/gpt-oss-120b`) sebagai fallback. Hanya jalur chat tutor yang menggunakan fallback ini; halaman Dokumen dan Terjemah tetap menggunakan Gemini dan model lokal, dan tidak pernah dikirim ke Groq. Saat fallback aktif, label kecil "Dijawab model cadangan" ditampilkan di bawah balasan chat.
+Saat Gemini mencapai batas kuota (misalnya HTTP 429 atau 5xx), pesan chat tutor dapat dialirkan ke model cadangan Groq (`openai/gpt-oss-120b`) sebagai fallback. Hanya jalur chat tutor yang menggunakan fallback ini; halaman Dokumen dan Terjemah tetap menggunakan Gemini dan model lokal, dan tidak pernah dikirim ke Groq. Saat fallback aktif, label kecil "Dijawab model cadangan" ditampilkan di bawah balasan chat. Artinya, saat cadangan aktif, pesan chat-mu dikirim ke Groq, bukan ke Google.
 
 Kebijakan data tiap penyedia model berbeda, dan pengguna disarankan untuk membaca ketentuan masing-masing sebelum mengirimkan informasi pribadi.
 
@@ -182,7 +182,7 @@ Kebijakan data tiap penyedia model berbeda, dan pengguna disarankan untuk membac
 Ide ke depan, bukan komitmen:
 
 - [ ] Penilaian pelafalan
-- [ ] Latihan ulang dari kesalahan lama
+- [x] Latihan ulang dari kesalahan lama
 - [ ] Deployment dan dukungan banyak pengguna
 
 ## Keamanan
