@@ -171,6 +171,12 @@ Folder `data/` dibuat otomatis saat aplikasi pertama dijalankan dan tidak ikut r
 - **Belum ada penilaian pelafalan** (pronunciation scoring).
 - Berjalan lokal untuk satu pengguna, tanpa login.
 
+## Model cadangan dan privasi
+
+Saat Gemini mencapai batas kuota (misalnya HTTP 429 atau 5xx), pesan chat tutor dapat dialirkan ke model cadangan Groq (`openai/gpt-oss-120b`) sebagai fallback. Hanya jalur chat tutor yang menggunakan fallback ini; halaman Dokumen dan Terjemah tetap menggunakan Gemini dan model lokal, dan tidak pernah dikirim ke Groq. Saat fallback aktif, label kecil "Dijawab model cadangan" ditampilkan di bawah balasan chat.
+
+Kebijakan data tiap penyedia model berbeda, dan pengguna disarankan untuk membaca ketentuan masing-masing sebelum mengirimkan informasi pribadi.
+
 ## Peta jalan
 
 Ide ke depan, bukan komitmen:

@@ -6,7 +6,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 import db
-from services.llm import ask_tutor, split_correction, speakable
+from services.llm import ask_tutor_ex, split_correction, speakable
 from services.fixparse import parse_fix, TAG_LABELS
 from services.stt import speech_to_text
 from services.tts import text_to_speech
@@ -87,7 +87,9 @@ def handle_user_message(text: str, speak: bool) -> str | None:
     db.add_message(state.session_id, "user", text)
     state.reply_audio = None
     try:
-        reply = ask_tutor(db.get_messages(state.session_id), lang=lang_code, level=level_belajar, mixed=campur)
+        reply, provider = ask_tutor_ex(db.get_messages(state.session_id), lang=lang_code, level=level_belajar, mixed=campur)
+        if provider == "groq":
+            st.caption("Dijawab model cadangan")
     except RuntimeError as exc:
         return str(exc)
     conversation, correction = split_correction(reply)

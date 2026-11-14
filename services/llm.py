@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import requests
 
 from dotenv import load_dotenv
 from google import genai
@@ -9,6 +10,19 @@ from google.genai import types
 from .fixparse import parse_fix, TAG_LABELS
 
 load_dotenv()
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = os.getenv("GROQ_MODEL")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+GROQ_EXTRA_RULES = (
+    "ATURAN TAMBAHAN: Penjelasan pada baris Fix WAJIB berbahasa Indonesia, 1 sampai 2 kalimat lengkap, "
+    "sebutkan aturan grammar-nya dan alasan kenapa kalimat awal salah. Dilarang menulis penjelasan dalam bahasa Inggris. "
+    "Format baris Fix harus persis: Fix: <kalimat benar> || <penjelasan Indonesia> || <tag>. "
+    "Jika kalimat pengguna sudah benar, JANGAN menulis baris Fix. "
+    "Jika diminta membalas dalam bahasa lain (Mandarin/Jepang), balasan utama ditulis dalam bahasa itu, lalu tambahkan baris "
+    "Pinyin/Romaji dan Arti sesuai format yang diminta."
+)
 
 SYSTEM_PROMPT = (
     "You are a friendly English tutor and conversation partner for an Indonesian "
@@ -57,7 +71,7 @@ def _generate_with_retry(
         return client.models.generate_content(model=model, contents=contents, config=config)
 
 
-def ask_tutor(
+def _ask_tutor_gemini(
     history: list[dict], lang: str = "en", level: str = "intermediate", mixed: bool = False
 ) -> str:
     api_key = os.getenv("GEMINI_API_KEY")
@@ -100,6 +114,117 @@ def ask_tutor(
             f"prompt_feedback={feedback}"
         )
     return response.text.strip()
+
+
+def _should_fallback_to_groq(exc: Exception) -> bool:
+    code = getattr(exc, "code", None)
+    if isinstance(code, int):
+        if code == 429:
+            return True
+        if 500 <= code < 600:
+            return True
+        return False
+    message = str(exc).lower()
+    if "timeout" in message or "deadline exceeded" in message:
+        return True
+    if "connection" in message or "connect" in message or "network" in message:
+        return True
+    return False
+
+
+def _strip_think(text: str) -> str:
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"</?think>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"```think.*?```", "", text, flags=re.DOTALL)
+    return text.strip()
+
+
+def _ask_tutor_groq(
+    history: list[dict], lang: str = "en", level: str = "intermediate", mixed: bool = False
+) -> str:
+    api_key = os.getenv("GROQ_API_KEY")
+    model = os.getenv("GROQ_MODEL")
+    if not api_key or not model:
+        raise RuntimeError("GROQ_API_KEY atau GROQ_MODEL belum diisi di .env")
+
+    system_prompt = _build_system_prompt(lang, level, mixed) + "\n" + GROQ_EXTRA_RULES
+
+    recent = history[-8:] if history else []
+    messages = [{"role": "system", "content": system_prompt}]
+    for item in recent:
+        role = item["role"] if item["role"] in ("user", "assistant") else "user"
+        messages.append({"role": role, "content": item["text"]})
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.7,
+    }
+    try:
+        resp = requests.post(GROQ_API_URL, headers=headers, json=payload, timeout=30)
+    except requests.exceptions.Timeout as exc:
+        raise RuntimeError(f"Timeout memanggil Groq: {exc}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Gagal koneksi ke Groq: {type(exc).__name__}") from exc
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"Groq HTTP {resp.status_code}")
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Gagal parsing respons Groq: {exc}") from exc
+
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError("Groq mengembalikan choices kosong")
+    message = choices[0].get("message") or {}
+    content = message.get("content") or ""
+    content = _strip_think(content).strip()
+    if not content:
+        raise RuntimeError("Groq mengembalikan content kosong")
+    return content
+
+
+def ask_tutor_ex(
+    history: list[dict], lang: str = "en", level: str = "intermediate", mixed: bool = False
+) -> tuple[str, str]:
+    force_fallback = os.getenv("FLUENTA_FORCE_FALLBACK", "0") == "1"
+    groq_available = bool(GROQ_API_KEY and GROQ_MODEL)
+
+    gemini_error = None
+
+    if not force_fallback:
+        try:
+            text = _ask_tutor_gemini(history, lang, level, mixed)
+            return text, "gemini"
+        except Exception as exc:
+            gemini_error = exc
+            if not _should_fallback_to_groq(exc):
+                raise
+            if not groq_available:
+                raise
+
+    if groq_available:
+        try:
+            text = _ask_tutor_groq(history, lang, level, mixed)
+            return text, "groq"
+        except Exception as groq_exc:
+            print(f"Gagal fallback ke Groq: {type(groq_exc).__name__}: {str(groq_exc)[:200]}")
+            raise gemini_error from groq_exc
+
+    raise gemini_error if gemini_error else RuntimeError("Tidak ada penyedia LLM yang tersedia")
+
+
+def ask_tutor(
+    history: list[dict], lang: str = "en", level: str = "intermediate", mixed: bool = False
+) -> str:
+    text, _provider = ask_tutor_ex(history, lang, level, mixed)
+    return text
 
 def split_correction(reply: str) -> tuple[str, str | None]:
     match = _FIX_LINE.search(reply)
