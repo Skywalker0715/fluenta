@@ -18,6 +18,7 @@
 <p align="center">
   <a href="#fitur">Fitur</a> ·
   <a href="#cara-kerja">Cara kerja</a> ·
+  <a href="#model-cadangan">Model cadangan</a> ·
   <a href="#mulai-cepat">Mulai cepat</a> ·
   <a href="#konfigurasi">Konfigurasi</a> ·
   <a href="#batasan-yang-diketahui">Batasan</a> ·
@@ -28,7 +29,7 @@
 
 ## Tentang
 
-Fluenta adalah aplikasi Streamlit untuk berlatih bahasa Inggris lewat percakapan dengan tutor AI. Dibuat untuk pemelajar Indonesia, dengan Mandarin dan Jepang sebagai bahasa belajar tambahan. Kamu bisa mengetik atau berbicara langsung, dan tutor membalas dengan teks dan suara. Kesalahan grammar dan tense dikoreksi lengkap dengan penjelasan berbahasa Indonesia.
+Fluenta adalah aplikasi Streamlit untuk berlatih bahasa Inggris lewat percakapan dengan tutor AI. Dibuat untuk pemelajar Indonesia, dengan Mandarin dan Jepang sebagai bahasa belajar tambahan. Kamu bisa mengetik atau berbicara langsung, dan tutor membalas dengan teks dan suara. Kesalahan grammar dan tense dikoreksi lengkap dengan penjelasan berbahasa Indonesia. Kalau model utama (Gemini) kena batas kuota, chat otomatis dialihkan ke model cadangan (Groq) supaya latihan tidak terputus.
 
 ## Fitur
 
@@ -48,14 +49,12 @@ Fluenta adalah aplikasi Streamlit untuk berlatih bahasa Inggris lewat percakapan
 | Koreksi terstruktur | Kalimat benar, penjelasan Indonesia, dan tag jenis kesalahan |
 | Model cadangan | Chat tetap jalan lewat Groq saat Gemini kena batas kuota |
 
-
-
 ## Cara kerja
 
 ```mermaid
 flowchart LR
     U([Pengguna]) --> UI["Streamlit<br/>app.py dan views/"]
-    UI --> LLM["services/llm.py<br/>Gemini"]
+    UI --> LLM["services/llm.py<br/>Gemini (utama)"]
     UI --> STT["services/stt.py<br/>Deepgram"]
     UI --> TTS["services/tts.py<br/>ElevenLabs"]
     UI --> TR["services/translate.py<br/>Opus-MT lokal / Gemini"]
@@ -65,9 +64,7 @@ flowchart LR
     LLM -.->|"cadangan saat Gemini kena limit"| GQ
 ```
 
-### Model cadangan
-
-Gemini adalah model utama. Kalau Gemini kena batas kuota (HTTP 429), gangguan server (5xx), atau timeout, chat tutor otomatis dialihkan ke Groq (`openai/gpt-oss-120b`) supaya kamu tetap bisa berlatih. Balasan dari model cadangan diberi label kecil "Dijawab model cadangan". Kalau Gemini normal, Groq tidak dipanggil sama sekali. Cadangan ini opsional: tanpa `GROQ_API_KEY`, aplikasi hanya memakai Gemini.
+Garis putus-putus menunjukkan jalur cadangan: Groq hanya dipanggil kalau Gemini gagal.
 
 Alur percakapan suara:
 
@@ -84,6 +81,21 @@ Mikrofon  ->  Deepgram (suara ke teks)  ->  Gemini (tutor dan koreksi)  ->  Elev
 | Terjemahan lokal | `transformers`, `Helsinki-NLP/opus-mt-id-en` | Indonesia ke Inggris tanpa API |
 | Penyimpanan | SQLite | Riwayat sesi, dokumen, dan statistik |
 | Model cadangan | Groq (`openai/gpt-oss-120b`) | Menjawab chat tutor saat Gemini kena batas kuota atau gangguan |
+
+### Alur model cadangan
+
+```
+Pesan pengguna -> Gemini -> sukses -> balasan
+                          -> gagal (429, 5xx, timeout) -> Groq -> balasan + label "Dijawab model cadangan"
+```
+
+- Fallback hanya untuk kegagalan kuota, server, atau timeout. Error lain (misalnya 400 atau 404) tidak dialihkan dan tampil sebagai error seperti biasa.
+- Hanya chat tutor yang punya cadangan; Dokumen dan Terjemah tidak.
+- Kalau Groq juga gagal, pesan error dari Gemini yang ditampilkan.
+
+Detail privasi ada di bagian "Model cadangan dan privasi" di bawah.
+
+Gemini adalah model utama. Kalau Gemini kena batas kuota (HTTP 429), gangguan server (5xx), atau timeout, chat tutor otomatis dialihkan ke Groq (`openai/gpt-oss-120b`) supaya kamu tetap bisa berlatih. Balasan dari model cadangan diberi label kecil "Dijawab model cadangan". Kalau Gemini normal, Groq tidak dipanggil sama sekali. Cadangan ini opsional: tanpa `GROQ_API_KEY`, aplikasi hanya memakai Gemini.
 
 ## Mulai cepat
 
@@ -151,8 +163,11 @@ fluenta/
 │   ├── translate.py
 │   └── docs.py
 ├── assets/             Logo, ikon, dan skrip kirim otomatis
-├── docs/               Dokumen perencanaan dan arsitektur
+├── docs/               Dokumen perencanaan, arsitektur, dan laporan evaluasi model
 ├── scripts/            Skrip evaluasi dan tes model cadangan
+│   ├── eval_fallback_live.py     Evaluasi fallback langsung
+│   ├── eval_groq.py              Evaluasi model cadangan Groq
+│   └── test_fallback_offline.py  Uji fallback offline
 ├── .streamlit/         Konfigurasi Streamlit
 ├── .env.example        Contoh konfigurasi
 ├── LICENSE             Lisensi Apache 2.0
