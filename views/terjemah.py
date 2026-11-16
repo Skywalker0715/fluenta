@@ -1,6 +1,6 @@
 import streamlit as st
 
-from services.translate import translate_id_en, translate_text
+from services.translate import translate_id_en, translate_text, translate_text_ex
 
 st.title("Terjemah")
 
@@ -23,7 +23,9 @@ if st.button("Terjemahkan"):
         if engine == "Cepat: Indonesia ke Inggris (model lokal)":
             result = translate_id_en(text)
         else:
-            result = translate_text(text, target_language)
+            result, provider = translate_text_ex(text, target_language)
+            if provider == "groq":
+                st.caption("Diterjemahkan model cadangan")
     except RuntimeError as exc:
         st.error(str(exc))
     else:

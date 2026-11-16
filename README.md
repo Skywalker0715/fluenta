@@ -41,7 +41,7 @@ Fluenta adalah aplikasi Streamlit untuk berlatih bahasa Inggris lewat percakapan
 | Tiga level | Beginner, intermediate, dan advanced menyesuaikan panjang dan kerumitan balasan |
 | Riwayat sesi | Semua percakapan tersimpan di SQLite dan bisa dibuka lagi |
 | Halaman Dokumen | Unggah PDF, DOCX, TXT, atau gambar, lalu terjemahkan atau rangkum dan unduh hasilnya |
-| Halaman Terjemah | Model lokal Indonesia ke Inggris, atau Gemini untuk bahasa lain |
+| Halaman Terjemah | Model lokal Indonesia ke Inggris, atau Gemini untuk bahasa lain (dengan fallback ke Groq saat Gemini gagal) |
 | Halaman Progres | Statistik belajar, koreksi per hari, dan daftar kesalahan terbaru |
 | Pola kesalahan | Grafik dan urutan tag kesalahan yang paling sering terjadi |
 | Latihan | Latihan ulang dari koreksi baru dengan sistem kotak Leitner |
@@ -80,7 +80,7 @@ Mikrofon  ->  Deepgram (suara ke teks)  ->  Gemini (tutor dan koreksi)  ->  Elev
 | Teks ke suara | ElevenLabs | Suara balasan tutor |
 | Terjemahan lokal | `transformers`, `Helsinki-NLP/opus-mt-id-en` | Indonesia ke Inggris tanpa API |
 | Penyimpanan | SQLite | Riwayat sesi, dokumen, dan statistik |
-| Model cadangan | Groq (`openai/gpt-oss-120b`) | Menjawab chat tutor saat Gemini kena batas kuota atau gangguan |
+| Model cadangan | Groq (`openai/gpt-oss-120b`) | Menjawab chat tutor dan terjemahan teks pendek (jalur Gemini di halaman Terjemah) saat Gemini kena batas kuota atau gangguan |
 
 ### Alur model cadangan
 
@@ -90,12 +90,12 @@ Pesan pengguna -> Gemini -> sukses -> balasan
 ```
 
 - Fallback hanya untuk kegagalan kuota, server, atau timeout. Error lain (misalnya 400 atau 404) tidak dialihkan dan tampil sebagai error seperti biasa.
-- Hanya chat tutor yang punya cadangan; Dokumen dan Terjemah tidak.
+- Cadangan untuk chat tutor dan terjemahan teks pendek (jalur Gemini di halaman Terjemah); Dokumen dan mesin lokal tidak.
 - Kalau Groq juga gagal, pesan error dari Gemini yang ditampilkan.
 
 Detail privasi ada di bagian "Model cadangan dan privasi" di bawah.
 
-Gemini adalah model utama. Kalau Gemini kena batas kuota (HTTP 429), gangguan server (5xx), atau timeout, chat tutor otomatis dialihkan ke Groq (`openai/gpt-oss-120b`) supaya kamu tetap bisa berlatih. Balasan dari model cadangan diberi label kecil "Dijawab model cadangan". Kalau Gemini normal, Groq tidak dipanggil sama sekali. Cadangan ini opsional: tanpa `GROQ_API_KEY`, aplikasi hanya memakai Gemini.
+Gemini adalah model utama. Kalau Gemini kena batas kuota (HTTP 429), gangguan server (5xx), atau timeout, chat tutor dan terjemahan teks pendek (jalur Gemini di halaman Terjemah) otomatis dialihkan ke Groq (`openai/gpt-oss-120b`) supaya kamu tetap bisa berlatih. Balasan dari model cadangan diberi label kecil "Dijawab model cadangan" (chat) atau "Diterjemahkan model cadangan" (terjemahan). Kalau Gemini normal, Groq tidak dipanggil sama sekali. Cadangan ini opsional: tanpa `GROQ_API_KEY`, aplikasi hanya memakai Gemini.
 
 ## Mulai cepat
 
@@ -167,7 +167,8 @@ fluenta/
 ├── scripts/            Skrip evaluasi dan tes model cadangan
 │   ├── eval_fallback_live.py     Evaluasi fallback langsung
 │   ├── eval_groq.py              Evaluasi model cadangan Groq
-│   └── test_fallback_offline.py  Uji fallback offline
+│   ├── test_fallback_offline.py  Uji fallback offline
+│   └── test_translate_fallback_offline.py  Uji fallback terjemah offline
 ├── .streamlit/         Konfigurasi Streamlit
 ├── .env.example        Contoh konfigurasi
 ├── LICENSE             Lisensi Apache 2.0
@@ -184,11 +185,11 @@ Folder `data/` dibuat otomatis saat aplikasi pertama dijalankan dan tidak ikut r
 - **Mandarin dan Jepang:** koreksi dan balasan teks sudah diuji, tetapi pengenalan ucapan dan kualitas suara untuk dua bahasa itu belum diverifikasi.
 - **Belum ada penilaian pelafalan** (pronunciation scoring).
 - Berjalan lokal untuk satu pengguna, tanpa login.
-- **Model cadangan** hanya dipakai saat Gemini kena limit atau gangguan, dan hanya untuk chat tutor. Penjelasan koreksinya bisa lebih singkat daripada Gemini. Groq tier gratis juga punya batas sendiri (contoh limit yang dipublikasikan: 1.000 permintaan per hari dan 8.000 token per menit, per organisasi); angka pastinya ada di akun Groq-mu.
+- **Model cadangan** hanya dipakai saat Gemini kena limit atau gangguan, dan hanya untuk chat tutor dan terjemahan teks pendek (jalur Gemini di halaman Terjemah). Penjelasan koreksinya bisa lebih singkat daripada Gemini. Groq tier gratis juga punya batas sendiri (contoh limit yang dipublikasikan: 1.000 permintaan per hari dan 8.000 token per menit, per organisasi); angka pastinya ada di akun Groq-mu.
 
 ## Model cadangan dan privasi
 
-Saat Gemini mencapai batas kuota (misalnya HTTP 429 atau 5xx), pesan chat tutor dapat dialirkan ke model cadangan Groq (`openai/gpt-oss-120b`) sebagai fallback. Hanya jalur chat tutor yang menggunakan fallback ini; halaman Dokumen dan Terjemah tetap menggunakan Gemini dan model lokal, dan tidak pernah dikirim ke Groq. Saat fallback aktif, label kecil "Dijawab model cadangan" ditampilkan di bawah balasan chat. Artinya, saat cadangan aktif, pesan chat-mu dikirim ke Groq, bukan ke Google.
+Saat Gemini mencapai batas kuota (misalnya HTTP 429 atau 5xx), pesan chat tutor dan terjemahan teks pendek (jalur Gemini di halaman Terjemah) dapat dialirkan ke model cadangan Groq (`openai/gpt-oss-120b`) sebagai fallback. Hanya jalur chat tutor dan jalur Gemini di halaman Terjemah yang menggunakan fallback ini; halaman Dokumen dan mesin lokal tetap tidak pernah dikirim ke Groq. Saat fallback aktif, label kecil "Dijawab model cadangan" (chat) atau "Diterjemahkan model cadangan" (terjemahan) ditampilkan di bawah balasan. Artinya, saat cadangan aktif, pesan-mu dikirim ke Groq, bukan ke Google.
 
 Kebijakan data tiap penyedia model berbeda, dan pengguna disarankan untuk membaca ketentuan masing-masing sebelum mengirimkan informasi pribadi.
 

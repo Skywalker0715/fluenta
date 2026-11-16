@@ -1,19 +1,21 @@
 import os
-import torch
 
 from dotenv import load_dotenv
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-from .llm import generate_text
+from .llm import generate_text, generate_text_ex
 
 load_dotenv()
 
 _translator = None
+_tokenizer = None
 _TOKENIZER = "Helsinki-NLP/opus-mt-id-en"
 
 
 def translate_id_en(text: str) -> str:
-    global _translator
+    import torch
+    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+
+    global _translator, _tokenizer
     if _translator is None:
         _translator = AutoModelForSeq2SeqLM.from_pretrained(_TOKENIZER)
         _translator.eval()
@@ -35,4 +37,16 @@ def translate_text(text: str, target_language: str) -> str:
     return generate_text(
         [{"role": "user", "parts": [{"text": text}]}], instruction
     )
+
+
+def translate_text_ex(text: str, target_language: str) -> tuple[str, str]:
+    if not text or not text.strip():
+        return "", "gemini"
+    instruction = (
+        f"Translate the user's text into {target_language}. Output only the translation."
+    )
+    result, provider = generate_text_ex(
+        [{"role": "user", "parts": [{"text": text}]}], instruction
+    )
+    return result, provider
 

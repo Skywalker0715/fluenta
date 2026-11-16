@@ -190,6 +190,63 @@ def _ask_tutor_groq(
     return content
 
 
+def _groq_translate(contents: list, system_instruction: str) -> str:
+    api_key = os.getenv("GROQ_API_KEY")
+    model = os.getenv("GROQ_MODEL")
+    if not api_key or not model:
+        raise RuntimeError("GROQ_API_KEY atau GROQ_MODEL belum diisi di .env")
+
+    text_parts = []
+    for item in contents:
+        if item.get("role") == "user":
+            for part in item.get("parts", []):
+                if "text" in part:
+                    text_parts.append(part["text"])
+    text = "\n".join(text_parts)
+
+    system_prompt = "Terjemahkan teks persis seperti diminta. Balas HANYA hasil terjemahan tanpa penjelasan."
+    user_message = f"{system_instruction}\n\n{text}"
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+    ]
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.7,
+    }
+    try:
+        resp = requests.post(GROQ_API_URL, headers=headers, json=payload, timeout=30)
+    except requests.exceptions.Timeout as exc:
+        raise RuntimeError(f"Timeout memanggil Groq: {exc}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Gagal koneksi ke Groq: {type(exc).__name__}") from exc
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"Groq HTTP {resp.status_code}")
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Gagal parsing respons Groq: {exc}") from exc
+
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError("Groq mengembalikan choices kosong")
+    message = choices[0].get("message") or {}
+    content = message.get("content") or ""
+    content = _strip_think(content).strip()
+    if not content:
+        raise RuntimeError("Groq mengembalikan content kosong")
+    return content
+
+
 def ask_tutor_ex(
     history: list[dict], lang: str = "en", level: str = "intermediate", mixed: bool = False
 ) -> tuple[str, str]:
@@ -266,6 +323,47 @@ def generate_text(contents: list, system_instruction: str, timeout_ms: int = 300
             f"prompt_feedback={feedback}"
         )
     return response.text.strip()
+
+
+def generate_text_ex(
+    contents: list, system_instruction: str, timeout_ms: int = 30000
+) -> tuple[str, str]:
+    force_fallback = os.getenv("FLUENTA_FORCE_FALLBACK", "0") == "1"
+    groq_available = bool(GROQ_API_KEY and GROQ_MODEL)
+
+    text_parts = []
+    for item in contents:
+        if item.get("role") == "user":
+            for part in item.get("parts", []):
+                if "text" in part:
+                    text_parts.append(part["text"])
+    text = "\n".join(text_parts)
+
+    gemini_error = None
+
+    if not force_fallback:
+        try:
+            result = generate_text(contents, system_instruction, timeout_ms)
+            return result, "gemini"
+        except Exception as exc:
+            gemini_error = exc
+            if not _should_fallback_to_groq(exc):
+                raise
+            if not groq_available:
+                raise
+            if len(text) > 3000:
+                raise
+
+    if groq_available:
+        try:
+            result = _groq_translate(contents, system_instruction)
+            return result, "groq"
+        except Exception as groq_exc:
+            if gemini_error is not None:
+                raise gemini_error from groq_exc
+            raise
+
+    raise gemini_error if gemini_error else RuntimeError("Tidak ada penyedia LLM yang tersedia")
 
 
 def _build_system_prompt(lang: str, level: str, mixed: bool = False) -> str:
