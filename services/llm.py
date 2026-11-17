@@ -247,6 +247,52 @@ def _groq_translate(contents: list, system_instruction: str) -> str:
     return content
 
 
+def _groq_chat(system_prompt: str, user_text: str) -> str:
+    api_key = os.getenv("GROQ_API_KEY")
+    model = os.getenv("GROQ_MODEL")
+    if not api_key or not model:
+        raise RuntimeError("GROQ_API_KEY atau GROQ_MODEL belum diisi di .env")
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_text},
+    ]
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.7,
+    }
+    try:
+        resp = requests.post(GROQ_API_URL, headers=headers, json=payload, timeout=30)
+    except requests.exceptions.Timeout as exc:
+        raise RuntimeError(f"Timeout memanggil Groq: {exc}") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Gagal koneksi ke Groq: {type(exc).__name__}") from exc
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"Groq HTTP {resp.status_code}")
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Gagal parsing respons Groq: {exc}") from exc
+
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError("Groq mengembalikan choices kosong")
+    message = choices[0].get("message") or {}
+    content = message.get("content") or ""
+    content = _strip_think(content).strip()
+    if not content:
+        raise RuntimeError("Groq mengembalikan content kosong")
+    return content
+
+
 def ask_tutor_ex(
     history: list[dict], lang: str = "en", level: str = "intermediate", mixed: bool = False
 ) -> tuple[str, str]:
