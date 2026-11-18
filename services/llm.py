@@ -117,18 +117,45 @@ def _ask_tutor_gemini(
 
 
 def _should_fallback_to_groq(exc: Exception) -> bool:
-    code = getattr(exc, "code", None)
-    if isinstance(code, int):
-        if code == 429:
+    """Deteksi error yang layak diganti ke Groq.
+
+    Telusuri rantai pengecuali (__cause__ dan __context__) karena pemanggil
+    dapat menerima RuntimeError pembungkus dengan exception asli SDK
+    (misal google.genai.errors.APIError, code 429) tersembunyi di dalamnya.
+    Kode 4xx selain 429 (400, 401, 403, 404) tidak memicu fallback.
+    """
+
+    def norm(teks: str) -> str:
+        return teks.lower().replace("_", "").replace("-", "").replace(" ", "")
+
+    penanda = ("429", "resourceexhausted", "quota", "kuotageminihabis",
+               "503", "unavailable", "504", "deadlineexceeded", "timeout")
+    status_penanda = ("resourceexhausted", "unavailable", "deadlineexceeded")
+    seen = set()
+    node: Exception | None = exc
+    while node is not None and id(node) not in seen:
+        seen.add(id(node))
+        kode = getattr(node, "code", None)
+        if not isinstance(kode, int):
+            kode = getattr(node, "status_code", None)
+        if not isinstance(kode, int):
+            kode = getattr(node, "status", None)
+        if isinstance(kode, int):
+            if kode == 429 or 500 <= kode < 600:
+                return True
+        else:
+            status_teks = getattr(node, "status", None)
+            if isinstance(status_teks, str) and any(
+                p in norm(status_teks) for p in status_penanda
+            ):
+                return True
+        if any(
+            p in (norm(str(node)) + norm(type(node).__name__)) for p in penanda
+        ):
             return True
-        if 500 <= code < 600:
-            return True
-        return False
-    message = str(exc).lower()
-    if "timeout" in message or "deadline exceeded" in message:
-        return True
-    if "connection" in message or "connect" in message or "network" in message:
-        return True
+        node = getattr(node, "__cause__", None) or getattr(
+            node, "__context__", None
+        )
     return False
 
 
