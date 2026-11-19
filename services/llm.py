@@ -15,13 +15,34 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL")
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
+# Cooldown Gemini untuk jalur chat tutor (ask_tutor_ex). time.monotonic-based.
+_gemini_cooldown_until = 0.0
+
+
+def _cooldown_aktif() -> bool:
+    detik = float(os.getenv("FLUENTA_GEMINI_COOLDOWN_S", "0") or "0")
+    if detik <= 0:
+        return False
+    return time.monotonic() < _gemini_cooldown_until
+
+
+def _aktifkan_cooldown() -> None:
+    global _gemini_cooldown_until
+    detik = float(os.getenv("FLUENTA_GEMINI_COOLDOWN_S", "0") or "0")
+    if detik > 0:
+        _gemini_cooldown_until = time.monotonic() + detik
+
+
 GROQ_EXTRA_RULES = (
     "ATURAN TAMBAHAN: Penjelasan pada baris Fix WAJIB berbahasa Indonesia, 1 sampai 2 kalimat lengkap, "
     "sebutkan aturan grammar-nya dan alasan kenapa kalimat awal salah. Dilarang menulis penjelasan dalam bahasa Inggris. "
+    "Dilarang juga menulis penjelasan dalam bahasa yang sedang dipelajari (Mandarin atau Jepang). "
     "Format baris Fix harus persis: Fix: <kalimat benar> || <penjelasan Indonesia> || <tag>. "
     "Jika kalimat pengguna sudah benar, JANGAN menulis baris Fix. "
     "Jika diminta membalas dalam bahasa lain (Mandarin/Jepang), balasan utama ditulis dalam bahasa itu, lalu tambahkan baris "
-    "Pinyin/Romaji dan Arti sesuai format yang diminta."
+    "Pinyin/Romaji dan Arti sesuai format yang diminta. "
+    "Contoh baris Fix Mandarin: Fix: 我昨天去学校。 || Keterangan waktu 昨天 diletakkan sebelum kata kerja. || word_order. "
+    "Contoh baris Fix Jepang: Fix: 私は学校へ行きます。 || Gunakan partikel へ atau に untuk tujuan, bukan を. || prepositions."
 )
 
 SYSTEM_PROMPT = (
@@ -32,7 +53,7 @@ SYSTEM_PROMPT = (
     "correct real mistakes in grammar, tense, word choice, or unnatural phrasing. "
     "If the user's last message has a real mistake, add a final line starting "
     "exactly with 'Fix: ' in a single line: 'Fix: <corrected sentence> || "
-    "<short explanation in Indonesian naming the rule> || <tag>', where tag is "
+    "<short explanation in Indonesian ONLY. The explanation MUST be in Indonesian, never in English and never in the language being learned (Mandarin or Japanese).> || <tag>', where tag is "
     "exactly one of: past_tense, present_tense, future_tense, articles, "
     "prepositions, subject_verb_agreement, plural_singular, word_order, "
     "word_choice, collocation, code_mixing, other. If there is no real "
@@ -60,19 +81,27 @@ def _is_transient_error(exc: Exception) -> bool:
 
 
 def _generate_with_retry(
-    client: genai.Client, model: str, contents: list, config: types.GenerateContentConfig
+    client: genai.Client,
+    model: str,
+    contents: list,
+    config: types.GenerateContentConfig,
+    retry: bool = True,
 ):
     try:
         return client.models.generate_content(model=model, contents=contents, config=config)
     except Exception as exc:
-        if not _is_transient_error(exc):
+        if not retry or not _is_transient_error(exc):
             raise
         time.sleep(2)
         return client.models.generate_content(model=model, contents=contents, config=config)
 
 
 def _ask_tutor_gemini(
-    history: list[dict], lang: str = "en", level: str = "intermediate", mixed: bool = False
+    history: list[dict],
+    lang: str = "en",
+    level: str = "intermediate",
+    mixed: bool = False,
+    retry: bool = True,
 ) -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     model = os.getenv("GEMINI_MODEL")
@@ -94,7 +123,9 @@ def _ask_tutor_gemini(
         api_key=api_key, http_options=types.HttpOptions(timeout=30000)
     )
     try:
-        response = _generate_with_retry(client, model, contents, config)
+        response = _generate_with_retry(
+            client, model, contents, config, retry=retry
+        )
     except Exception as exc:
         if getattr(exc, "code", None) == 429:
             raise RuntimeError(
@@ -164,6 +195,41 @@ def _strip_think(text: str) -> str:
     text = re.sub(r"</?think>", "", text, flags=re.IGNORECASE)
     text = re.sub(r"```think.*?```", "", text, flags=re.DOTALL)
     return text.strip()
+
+
+_HAN_KANA = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]")
+_HURUF = re.compile(r"[^\W\d_]", re.UNICODE)
+_PENNANTA_ID = ("yang", "dan", "untuk", "karena", "harus", "gunakan",
+                "kata", "dengan", "atau", "bukan", "di", "ke")
+
+
+def _penjelasan_bukan_indonesia(teks_fix: str) -> bool:
+    """True jika penjelasan di baris Fix terindikasi bukan bahasa Indonesia.
+
+    Ambil bagian kedua di antara '||', hapus teks dalam tanda kutip terlebih
+    dahulu, lalu nyatakan pelanggaran bila rasio aksara Han/kana terhadap
+    seluruh huruf > 20% atau tidak ada kata penanda Indonesia sama sekali.
+    """
+    if not teks_fix:
+        return False
+    hasil = parse_fix(teks_fix)
+    if not hasil["structured"]:
+        return False
+    penjelasan = hasil["explanation"]
+    bersih = re.sub(r"「[^」]*」", "", penjelasan)
+    bersih = re.sub(r"\u201c[^\u201d]*\u201d", "", bersih)
+    bersih = re.sub(r"\u2018[^\u2019]*\u2019", "", bersih)
+    bersih = re.sub(r'"[^"]*"', "", bersih)
+    bersih = re.sub(r"'[^']*'", "", bersih)
+    huruf = _HURUF.findall(bersih)
+    if huruf:
+        han_kana = len(_HAN_KANA.findall(bersih))
+        if han_kana / len(huruf) > 0.20:
+            return True
+    for kata in _PENNANTA_ID:
+        if re.search(r"\b" + re.escape(kata) + r"\b", bersih.lower()):
+            return False
+    return True
 
 
 def _ask_tutor_groq(
@@ -329,23 +395,47 @@ def ask_tutor_ex(
     gemini_error = None
 
     if not force_fallback:
-        try:
-            text = _ask_tutor_gemini(history, lang, level, mixed)
-            return text, "gemini"
-        except Exception as exc:
-            gemini_error = exc
-            if not _should_fallback_to_groq(exc):
+        if groq_available and not _cooldown_aktif():
+            # Satu percobaan Gemini tanpa retry transient; langsung ke Groq saat gagal.
+            try:
+                text = _ask_tutor_gemini(history, lang, level, mixed, retry=False)
+                return text, "gemini"
+            except Exception as exc:
+                gemini_error = exc
+                if not _should_fallback_to_groq(exc):
+                    raise
+        elif not groq_available:
+            # Perilaku lama: Gemini dengan retry transient, tidak ada fallback ke Groq.
+            try:
+                text = _ask_tutor_gemini(history, lang, level, mixed, retry=True)
+                return text, "gemini"
+            except Exception as exc:
+                gemini_error = exc
+                if not _should_fallback_to_groq(exc):
+                    raise
                 raise
-            if not groq_available:
-                raise
+        # groq tersedia tetapi cooldown aktif -> langsung ke Groq di bawah.
 
     if groq_available:
         try:
             text = _ask_tutor_groq(history, lang, level, mixed)
+            if gemini_error is not None:
+                _aktifkan_cooldown()
+            # BAGIAN 2c: satu kali percobaan ulang ke Groq bila penjelasan Fix bukan Indonesia
+            match = _FIX_LINE.search(text)
+            if match:
+                baris_fix = text[match.start():].split("\n", 1)[0]
+                if _penjelasan_bukan_indonesia(baris_fix):
+                    ulang_history = list(history) + [
+                        {"role": "user", "text": "Tulis ulang. Penjelasan di baris Fix WAJIB bahasa Indonesia."}
+                    ]
+                    text = _ask_tutor_groq(ulang_history, lang, level, mixed)
             return text, "groq"
         except Exception as groq_exc:
             print(f"Gagal fallback ke Groq: {type(groq_exc).__name__}: {str(groq_exc)[:200]}")
-            raise gemini_error from groq_exc
+            if gemini_error is not None:
+                raise gemini_error from groq_exc
+            raise
 
     raise gemini_error if gemini_error else RuntimeError("Tidak ada penyedia LLM yang tersedia")
 
@@ -456,14 +546,23 @@ def _build_system_prompt(lang: str, level: str, mixed: bool = False) -> str:
         )
     if lang == "zh":
         prompt += (
-            "\nReply in Mandarin Chinese (Simplified). Add a line starting exactly with "
-            "'Pinyin: ' and a line starting exactly with 'Arti: ' (Indonesian meaning). "
-            "Place any Fix line last."
+            "\nReply in Mandarin Chinese (Simplified). ALL Mandarin text in your reply, "
+            "including the follow-up question, MUST be written before the 'Pinyin: ' and "
+            "'Arti: ' lines. Both lines MUST cover the entire Mandarin text, including "
+            "the follow-up question. Do NOT write any Mandarin text after the 'Arti: ' "
+            "line. Add a line starting exactly with 'Pinyin: ' and a line starting "
+            "exactly with 'Arti: ' (Indonesian meaning). Place any Fix line last. "
+            "Contoh baris Fix Mandarin: Fix: 我昨天去学校。 || Keterangan waktu 昨天 diletakkan sebelum kata kerja. || word_order."
         )
     elif lang == "ja":
         prompt += (
-            "\nReply in Japanese. Add a line starting exactly with 'Romaji: ' and a line "
-            "starting exactly with 'Arti: ' (Indonesian meaning). Place any Fix line last."
+            "\nReply in Japanese. ALL Japanese text in your reply, including the "
+            "follow-up question, MUST be written before the 'Romaji: ' and 'Arti: ' "
+            "lines. Both lines MUST cover the entire Japanese text, including the "
+            "follow-up question. Do NOT write any Japanese text after the 'Arti: ' "
+            "line. Add a line starting exactly with 'Romaji: ' and a line starting "
+            "exactly with 'Arti: ' (Indonesian meaning). Place any Fix line last. "
+            "Contoh baris Fix Jepang: Fix: 私は学校へ行きます。 || Gunakan partikel へ atau に untuk tujuan, bukan を. || prepositions."
         )
     if mixed:
         _nama_bahasa = {"en": "English", "zh": "Mandarin", "ja": "Japanese"}

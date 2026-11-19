@@ -89,6 +89,8 @@ def lepaskan():
 
 def jalankan(exc):
     """Jalankan _ask_tutor_gemini asli melalui ask_tutor_ex; Groq di-mock."""
+    os.environ["FLUENTA_GEMINI_COOLDOWN_S"] = "0"
+    llm._gemini_cooldown_until = 0.0
     pasang(exc)
     dipanggil_groq = {"terpanggil": False}
 

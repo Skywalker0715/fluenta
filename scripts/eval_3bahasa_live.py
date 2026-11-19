@@ -1,11 +1,10 @@
 """Evaluasi live ask_tutor_ex untuk bahasa Inggris (en), Mandarin (zh), dan Jepang (ja).
 
 Usage (dari root repositori):
-    python scripts/eval_3bahasa_live.py [--hanya ID1 ID2 ...] [--jeda DETIK]
+    python scripts/eval_3bahasa_live.py [--hanya ID1 ID2 ...] [--jeda DETIK] [--keluaran NAMA]
 
-Skrip ini hanya membuat file baru (docs/eval_3bahasa_live.md, atau
-docs/eval_3bahasa_live_ulang.md bila --hanya dipakai) dan tidak
-mengubah kode yang ada. Tidak membuka dan tidak mencetak isi .env.
+Skrip ini hanya membuat file baru (berkas laporan, default docs/eval_3bahasa_live.md, atau
+berkas yang ditentukan dengan --keluaran) dan tidak mengubah kode yang ada. Tidak membuka dan tidak mencetak isi .env.
 """
 import argparse
 import os
@@ -59,18 +58,29 @@ if len(CASES) > MAX_PANGGILAN:
 try:
     from pypinyin import pypinyin, Style
     PYPINYIN_OK = True
-except Exception:
+    PYPINYIN_ERR = None
+except ImportError as exc:
     PYPINYIN_OK = False
+    PYPINYIN_ERR = str(exc)
+except Exception as exc:
+    PYPINYIN_OK = False
+    PYPINYIN_ERR = str(exc)
 
 try:
     import cutlet
     _CUTLET = cutlet.Cutlet()
     CUTLET_OK = True
-except Exception:
+    CUTLET_ERR = None
+except ImportError as exc:
     _CUTLET = None
     CUTLET_OK = False
+    CUTLET_ERR = str(exc)
+except Exception as exc:
+    _CUTLET = None
+    CUTLET_OK = False
+    CUTLET_ERR = str(exc)
 
-MAKRON = {"ā": "aa", "ē": "ee", "ī": "ii", "ō": "oo", "ū": "uu"}
+MAKRON = {"ā": "aa", "ē": "ee", "ī": "ii", "ō": "ou", "ū": "uu"}
 
 
 def normalisasi(teks):
@@ -152,13 +162,22 @@ def cek_baris_pendukung(balasan, lang):
     return "-"
 
 
+def ambil_baris_fix(balasan):
+    """Ambil isi setelah awalan 'Fix:' pada baris Fix pertama yang ditemukan."""
+    match = FIX_LINE.search(balasan)
+    if not match:
+        return None
+    baris = balasan[match.start():].split("\n", 1)[0]
+    return baris[len("Fix:"):].strip()
+
+
 def cek_fix(balasan, harapan):
     """(c) Apakah baris Fix muncul sesuai harapan. Informasi saja."""
     ada = FIX_LINE.search(balasan) is not None
     if harapan == "fix":
         if not ada:
             return "tidak ada (harapan: ada)"
-        isi = FIX_LINE.search(balasan).group(0)[len("Fix:"):].strip()
+        isi = ambil_baris_fix(balasan)
         hasil = parse_fix(isi)
         if hasil["structured"] and hasil["tag"] in TAG_LABELS:
             return f"ada, tag valid ({hasil['tag']})"
@@ -176,16 +195,20 @@ def pypinyin_teks(teks_han):
 
 
 def bandingkan_pinyin(llm_line, teks_han):
-    lib = pypinyin_teks(teks_han)
+    """Bandingkan Pinyin LLM dengan pypinyin, dengan dan tanpa nada."""
+    lib = pypinyin_teks(teks_han)  # keluaran mentah pypinyin (dengan nada)
     if not llm_line or not lib:
         return "tidak dapat dihitung"
-    a = normalisasi(llm_line)
-    b = normalisasi(lib)
+    a = normalisasi(llm_line)      # bentuk ternormalisasi LLM
+    b = normalisasi(lib)           # bentuk ternormalisasi pustaka
+    a_tanpa = tanpa_nada(a)
+    b_tanpa = tanpa_nada(b)
+    detail = f"pustaka={lib!r} norma_pustaka={b!r} norma_llm={a!r}"
     if a == b:
-        return "cocok"
-    if tanpa_nada(a) == tanpa_nada(b):
-        return "beda nada saja"
-    return "beda"
+        return f"cocok ({detail})"
+    if a_tanpa == b_tanpa:
+        return f"beda nada saja ({detail})"
+    return f"beda ({detail})"
 
 
 def romaji_teks(teks_ja):
@@ -195,12 +218,22 @@ def romaji_teks(teks_ja):
 
 
 def bandingkan_romaji(llm_line, teks_ja):
-    lib = romaji_teks(teks_ja)
+    """Bandingkan Romaji LLM dengan cutlet, bentuk ternormalisasi kedua sisi."""
+    lib = romaji_teks(teks_ja)  # keluaran mentah cutlet
     if not llm_line or not lib:
         return "tidak dapat dihitung"
-    a = normalisasi_ja(llm_line)
-    b = normalisasi_ja(lib)
-    return "cocok" if a == b else "beda"
+    a = normalisasi_ja(llm_line)  # bentuk ternormalisasi LLM
+    b = normalisasi_ja(lib)       # bentuk ternormalisasi pustaka
+    detail = f"pustaka={lib!r} norma_pustaka={b!r} norma_llm={a!r}"
+    return f"cocok ({detail})" if a == b else f"beda ({detail})"
+
+
+def _err_pustaka(nama, ok, err):
+    if not ok:
+        if isinstance(err, str) and err == "pustaka tidak terpasang":
+            return f"{nama}: pustaka tidak terpasang"
+        return f"{nama}: {err}"
+    return None
 
 
 def cek_pustaka(balasan, lang):
@@ -208,19 +241,64 @@ def cek_pustaka(balasan, lang):
     teks = teks_target(balasan, lang)
     if lang == "zh":
         baris = ambil_baris(balasan, "Pinyin:")
-        if not PYPINYIN_OK:
-            return "pypinyin: pustaka tidak terpasang"
+        err = _err_pustaka("pypinyin", PYPINYIN_OK, PYPINYIN_ERR)
+        if err:
+            return err
         if not baris or not teks:
             return "pypinyin: tidak dapat dihitung"
         return f"pypinyin: {bandingkan_pinyin(baris, teks)}"
     if lang == "ja":
         baris = ambil_baris(balasan, "Romaji:")
-        if not CUTLET_OK:
-            return "cutlet: pustaka tidak terpasang"
+        err = _err_pustaka("cutlet", CUTLET_OK, CUTLET_ERR)
+        if err:
+            return err
         if not baris or not teks:
             return "cutlet: tidak dapat dihitung"
         return f"cutlet: {bandingkan_romaji(baris, teks)}"
     return "-"
+
+
+def cek_target_setelah_arti(balasan, lang):
+    """(f) zh/ja: apakah ada aksara target setelah baris 'Arti:' (ya/tidak)."""
+    if lang not in ("zh", "ja"):
+        return "-"
+    baris = balasan.splitlines()
+    arti_idx = None
+    for index, line in enumerate(baris):
+        if line.startswith("Arti:"):
+            arti_idx = index
+            break
+    if arti_idx is None:
+        return "-"
+    target = HAN if lang == "zh" else JA
+    for line in baris[arti_idx + 1:]:
+        if line.startswith("Fix:"):
+            continue
+        if target.search(line):
+            return "ya"
+    return "tidak"
+
+
+def cek_penjelasan_fix_mengandung_target(balasan, lang):
+    """(g) Apakah penjelasan Fix (antara '||') memuat aksara Han/kana (ya/tidak)."""
+    if lang == "en":
+        return "-"
+    match = FIX_LINE.search(balasan)
+    if not match:
+        return "-"
+    baris = balasan[match.start():].split("\n", 1)[0]
+    hasil = parse_fix(baris)
+    if not hasil["structured"]:
+        return "tidak"
+    penjelasan = hasil["explanation"]
+    # abaikan teks dalam tanda kutip (logika sama dengan pemeriksa di Bagian 2b)
+    bersih = re.sub(r"「[^」]*」", "", penjelasan)
+    bersih = re.sub(r"\u201c[^\u201d]*\u201d", "", bersih)
+    bersih = re.sub(r"\u2018[^\u2019]*\u2019", "", bersih)
+    bersih = re.sub(r'"[^"]*"', "", bersih)
+    bersih = re.sub(r"'[^']*'", "", bersih)
+    target = HAN if lang == "zh" else JA
+    return "ya" if target.search(bersih) else "tidak"
 
 
 def fix_sesuai_harapan(hasil_c):
@@ -276,6 +354,8 @@ def bangun_result(case_id, lang, mixed, input_text, harapan):
         "cek_b": cek_baris_pendukung(balasan, lang),
         "cek_c": cek_fix(balasan, harapan),
         "cek_d": cek_pustaka(balasan, lang),
+        "cek_e": cek_target_setelah_arti(balasan, lang),
+        "cek_f": cek_penjelasan_fix_mengandung_target(balasan, lang),
         "fix_ok": (
             fix_sesuai_harapan(cek_fix(balasan, harapan))
             if harapan in ("fix", "nofix")
@@ -292,21 +372,22 @@ def tulis_laporan(results, path="docs/eval_3bahasa_live.md", jeda=3, hanya=None)
     lines.append(f"Maksimal {MAX_PANGGILAN} panggilan, jeda {jeda} detik, timeout bawaan layanan.")
     if hanya:
         lines.append(f"Hanya kasus yang dijalankan: {', '.join(sorted(hanya))}.")
-    lines.append("Pemeriksaan otomatis (a) sampai (d) bersifat informasi, bukan penentu satu-satunya.")
+    lines.append("Pemeriksaan otomatis (a) sampai (g) bersifat informasi pembantu, bukan penentu satu-satunya kualitas.")
+    lines.append("Hasil pustaka (pypinyin/cutlet) bisa sendiri salah (misal polifon seperti 教 atau 得, atau 日本schaft dibaca \"Nippon go\"), jadi \"beda\" bukan otomatis berarti kesalahan LLM.")
     lines.append("Arti dan benarnya koreksi tidak dinilai secara otomatis.")
     lines.append("Laporan ini tidak mengandung kunci API.")
     lines.append("")
 
     lines.append("## Ringkasan per Kasus")
     lines.append("")
-    lines.append("| ID | Bahasa | Input | Provider | Latensi (s) | (a) Bahasa balasan | (b) Pinyin/Romaji + Arti | (c) Fix vs harapan | (d) Pinyin/Romaji vs pustaka |")
-    lines.append("|---|---|---|---|---|---|---|---|---|")
+    lines.append("| ID | Bahasa | Input | Provider | Latensi (s) | (a) Bahasa balasan | (b) Pinyin/Romaji + Arti | (c) Fix vs harapan | (d) Pinyin/Romaji vs pustaka | (e) Target setelah Arti: | (f) Penjelasan Fix ada Han/kana |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
     for r in results:
         provider = r["provider"] or "gagal"
         latensi = f"{r['latensi']:.2f}" if r["provider"] else "-"
         lines.append(
             f"| {r['id']} | {r['lang']} | {r['input']} | {provider} | {latensi} | "
-            f"{r['cek_a']} | {r['cek_b']} | {r['cek_c']} | {r['cek_d']} |"
+            f"{r['cek_a']} | {r['cek_b']} | {r['cek_c']} | {r['cek_d']} | {r['cek_e']} | {r['cek_f']} |"
         )
 
     lines.append("")
@@ -320,9 +401,16 @@ def tulis_laporan(results, path="docs/eval_3bahasa_live.md", jeda=3, hanya=None)
         lines.append(f"- Fix sesuai harapan: {sesuai} dari {len(fix_cek)} kasus (fix/nofix).")
         lines.append(f"- Fix tidak sesuai harapan: {tidak_sesuai} kasus.")
         if lang in ("zh", "ja"):
-            cocok = sum(1 for r in sub if r["cek_d"].endswith("cocok"))
-            beda = sum(1 for r in sub if r["cek_d"].endswith("beda") and "beda nada saja" not in r["cek_d"])
+            cocok = sum(
+                1 for r in sub
+                if r["cek_d"].startswith("pypinyin: cocok") or r["cek_d"].startswith("cutlet: cocok")
+            )
             nada = sum(1 for r in sub if "beda nada saja" in r["cek_d"])
+            beda = sum(
+                1 for r in sub
+                if (" pypinyin: beda" in r["cek_d"] or " cutlet: beda" in r["cek_d"])
+                and "beda nada saja" not in r["cek_d"]
+            )
             tidak_dapat = sum(
                 1 for r in sub
                 if "tidak dapat dihitung" in r["cek_d"] or "pustaka tidak terpasang" in r["cek_d"]
@@ -331,6 +419,10 @@ def tulis_laporan(results, path="docs/eval_3bahasa_live.md", jeda=3, hanya=None)
                 f"- Pinyin/Romaji vs pustaka: cocok {cocok}, beda nada saja {nada}, "
                 f"beda {beda}, tidak dapat dihitung {tidak_dapat}."
             )
+            setelah_arti_ya = sum(1 for r in sub if r["cek_e"] == "ya")
+            penjelasan_target = sum(1 for r in sub if r["cek_f"] == "ya")
+            lines.append(f"- Aksara target setelah Arti: {setelah_arti_ya} kasus.")
+            lines.append(f"- Penjelasan Fix mengandung Han/kana: {penjelasan_target} kasus.")
         else:
             lines.append("- Pinyin/Romaji vs pustaka: tidak berlaku (bukan bahasa target pustaka).")
         lines.append("")
@@ -354,13 +446,17 @@ def tulis_laporan(results, path="docs/eval_3bahasa_live.md", jeda=3, hanya=None)
         lines.append("Hasil pustaka:")
         lines.append(f"- {r['cek_d']}")
         lines.append("")
+        lines.append(f"Target setelah Arti: {r['cek_e']}")
+        lines.append(f"Penjelasan Fix mengandung Han/kana: {r['cek_f']}")
+        lines.append("")
         lines.append("| Pinyin/Romaji benar? | Arti benar? | Koreksi benar? |")
         lines.append("|---|---|---|")
         lines.append("| | | |")
         lines.append("")
 
     lines.append("## Catatan")
-    lines.append("- Pemeriksaan otomatis (a) sampai (d) adalah informasi pembantu, bukan penentu satu-satunya kualitas.")
+    lines.append("- Pemeriksaan otomatis (a) sampai (g) adalah informasi pembantu, bukan penentu satu-satunya kualitas.")
+    lines.append("- Hasil pustaka (pypinyin/cutlet) bisa sendiri salah (misal polifon seperti 教 atau 得, atau 日本語 menjadi \"Nippon go\"), jadi \"beda\" bukan otomatis berarti kesalahan LLM.")
     lines.append("- Arti (baris 'Arti:') dan kebenaran koreksi ('Fix:') harus divalidasi secara manual di kolom yang disediakan.")
     lines.append("- Jika panggilan gagal (misal kunci API belum diisi atau jaringan mati), provider dan latensi ditulis sebagai gagal, dan kasus berikutnya tetap dipanggil.")
     lines.append("- Tidak ada kunci API yang dicetak atau disimpan dalam laporan ini.")
@@ -388,6 +484,12 @@ def parse_argv():
         default=3,
         metavar="DETIK",
         help="Jeda antar panggilan dalam detik (default 3).",
+    )
+    parser.add_argument(
+        "--keluaran",
+        default="docs/eval_3bahasa_live.md",
+        metavar="NAMA",
+        help="Nama berkas laporan evaluasi (default docs/eval_3bahasa_live.md).",
     )
     return parser.parse_args()
 
@@ -430,8 +532,7 @@ def main():
         if index < total - 1:
             time.sleep(args.jeda)
 
-    laporan = "docs/eval_3bahasa_live_ulang.md" if ids else "docs/eval_3bahasa_live.md"
-    tulis_laporan(results, path=laporan, jeda=args.jeda, hanya=ids)
+    tulis_laporan(results, path=args.keluaran, jeda=args.jeda, hanya=ids)
 
 
 if __name__ == "__main__":

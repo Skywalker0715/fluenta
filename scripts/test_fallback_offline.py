@@ -27,6 +27,8 @@ def check(name, condition, detail=""):
 
 def reset():
     os.environ.pop("FLUENTA_FORCE_FALLBACK", None)
+    os.environ["FLUENTA_GEMINI_COOLDOWN_S"] = "0"
+    llm._gemini_cooldown_until = 0.0
 
 
 # a) Gemini sukses -> Groq tidak dipanggil, provider "gemini"

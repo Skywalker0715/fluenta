@@ -1,3 +1,5 @@
+import re
+
 TAG_LABELS = {
     "past_tense": "Past tense",
     "present_tense": "Present tense",
@@ -13,11 +15,13 @@ TAG_LABELS = {
     "other": "Lainnya",
 }
 
+_FIX_SEPARATOR = re.compile(r"\s*\|\|\s*")
+
 
 def parse_fix(text: str | None) -> dict:
     if not text:
         return {"corrected": None, "explanation": text or "", "tag": "other", "structured": False}
-    parts = [part.strip() for part in text.split(" || ")]
+    parts = [part.strip() for part in _FIX_SEPARATOR.split(text)]
     if len(parts) >= 2:
         corrected, explanation = parts[0], parts[1]
         tag = parts[2] if len(parts) >= 3 and parts[2] else "other"
