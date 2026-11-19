@@ -15,7 +15,7 @@ import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.llm import ask_tutor_ex
+from services.llm import ask_tutor_ex, _penjelasan_bukan_indonesia
 from services.fixparse import parse_fix, TAG_LABELS
 
 MAX_PANGGILAN = 20
@@ -56,7 +56,7 @@ if len(CASES) > MAX_PANGGILAN:
     raise SystemExit(f"Terlalu banyak kasus: {len(CASES)} (maksimal {MAX_PANGGILAN})")
 
 try:
-    from pypinyin import pypinyin, Style
+    from pypinyin import pinyin, Style
     PYPINYIN_OK = True
     PYPINYIN_ERR = None
 except ImportError as exc:
@@ -190,7 +190,7 @@ def cek_fix(balasan, harapan):
 def pypinyin_teks(teks_han):
     if not teks_han:
         return ""
-    hasil = pypinyin(teks_han, style=Style.TONE)
+    hasil = pinyin(teks_han, style=Style.TONE)
     return "".join(bagian for kata in hasil for bagian in kata)
 
 
@@ -280,25 +280,20 @@ def cek_target_setelah_arti(balasan, lang):
 
 
 def cek_penjelasan_fix_mengandung_target(balasan, lang):
-    """(g) Apakah penjelasan Fix (antara '||') memuat aksara Han/kana (ya/tidak)."""
+    """(f) Penjelasan Fix terindikasi bukan bahasa Indonesia (ya/tidak).
+
+    Logika identik dengan _penjelasan_bukan_indonesia di services/llm.py:
+    ambil penjelasan antara '||', abaikan teks dalam tanda kutip, lalu
+    nyatakan pelanggaran bila rasio aksara Han/kana terhadap seluruh huruf
+    > 20% atau tidak ada kata penanda Indonesia.
+    """
     if lang == "en":
         return "-"
     match = FIX_LINE.search(balasan)
     if not match:
         return "-"
     baris = balasan[match.start():].split("\n", 1)[0]
-    hasil = parse_fix(baris)
-    if not hasil["structured"]:
-        return "tidak"
-    penjelasan = hasil["explanation"]
-    # abaikan teks dalam tanda kutip (logika sama dengan pemeriksa di Bagian 2b)
-    bersih = re.sub(r"「[^」]*」", "", penjelasan)
-    bersih = re.sub(r"\u201c[^\u201d]*\u201d", "", bersih)
-    bersih = re.sub(r"\u2018[^\u2019]*\u2019", "", bersih)
-    bersih = re.sub(r'"[^"]*"', "", bersih)
-    bersih = re.sub(r"'[^']*'", "", bersih)
-    target = HAN if lang == "zh" else JA
-    return "ya" if target.search(bersih) else "tidak"
+    return "ya" if _penjelasan_bukan_indonesia(baris) else "tidak"
 
 
 def fix_sesuai_harapan(hasil_c):
@@ -380,7 +375,7 @@ def tulis_laporan(results, path="docs/eval_3bahasa_live.md", jeda=3, hanya=None)
 
     lines.append("## Ringkasan per Kasus")
     lines.append("")
-    lines.append("| ID | Bahasa | Input | Provider | Latensi (s) | (a) Bahasa balasan | (b) Pinyin/Romaji + Arti | (c) Fix vs harapan | (d) Pinyin/Romaji vs pustaka | (e) Target setelah Arti: | (f) Penjelasan Fix ada Han/kana |")
+    lines.append("| ID | Bahasa | Input | Provider | Latensi (s) | (a) Bahasa balasan | (b) Pinyin/Romaji + Arti | (c) Fix vs harapan | (d) Pinyin/Romaji vs pustaka | (e) Target setelah Arti: | (f) Penjelasan Fix bukan Indonesia |")
     lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
     for r in results:
         provider = r["provider"] or "gagal"
@@ -422,7 +417,7 @@ def tulis_laporan(results, path="docs/eval_3bahasa_live.md", jeda=3, hanya=None)
             setelah_arti_ya = sum(1 for r in sub if r["cek_e"] == "ya")
             penjelasan_target = sum(1 for r in sub if r["cek_f"] == "ya")
             lines.append(f"- Aksara target setelah Arti: {setelah_arti_ya} kasus.")
-            lines.append(f"- Penjelasan Fix mengandung Han/kana: {penjelasan_target} kasus.")
+            lines.append(f"- Penjelasan Fix bukan Indonesia: {penjelasan_target} kasus.")
         else:
             lines.append("- Pinyin/Romaji vs pustaka: tidak berlaku (bukan bahasa target pustaka).")
         lines.append("")
@@ -447,7 +442,7 @@ def tulis_laporan(results, path="docs/eval_3bahasa_live.md", jeda=3, hanya=None)
         lines.append(f"- {r['cek_d']}")
         lines.append("")
         lines.append(f"Target setelah Arti: {r['cek_e']}")
-        lines.append(f"Penjelasan Fix mengandung Han/kana: {r['cek_f']}")
+        lines.append(f"Penjelasan Fix bukan Indonesia: {r['cek_f']}")
         lines.append("")
         lines.append("| Pinyin/Romaji benar? | Arti benar? | Koreksi benar? |")
         lines.append("|---|---|---|")

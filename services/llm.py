@@ -43,6 +43,13 @@ GROQ_EXTRA_RULES = (
     "Pinyin/Romaji dan Arti sesuai format yang diminta. "
     "Contoh baris Fix Mandarin: Fix: 我昨天去学校。 || Keterangan waktu 昨天 diletakkan sebelum kata kerja. || word_order. "
     "Contoh baris Fix Jepang: Fix: 私は学校へ行きます。 || Gunakan partikel へ atau に untuk tujuan, bukan を. || prepositions."
+    " Bila pesan pengguna adalah sapaan, ucapan terima kasih, kata tunggal, "
+    "atau frasa pendek yang bermakna (contoh: hello, thank you, Konnichiwa, "
+    "Ni hao, coffee please), anggap itu normal bagi pemula; balas dengan ramah "
+    "dan lanjutkan percakapan, JANGAN meminta menulis ulang. Terapkan penolakan "
+    "hanya bila pesan terdiri dari kata-kata acak tanpa makna yang bisa "
+    "dipahami. Dilarang mengarang riwayat percakapan atau mengklaim sudah "
+    "membahas sesuatu sebelumnya."
 )
 
 SYSTEM_PROMPT = (
@@ -58,6 +65,13 @@ SYSTEM_PROMPT = (
     "prepositions, subject_verb_agreement, plural_singular, word_order, "
     "word_choice, collocation, code_mixing, other. If there is no real "
     "mistake, do not add a Fix line."
+    "If the user's message is a greeting, thanks, a single word, or a short "
+    "meaningful phrase (for example: hello, thank you, Konnichiwa, Ni hao, "
+    "coffee please), treat it as normal for a beginner; reply friendly and "
+    "continue the conversation, do not ask the user to rewrite. Only refuse to "
+    "treat it as meaningful if the message consists of random words without "
+    "understandable meaning. Do not invent conversation history or claim to "
+    "have discussed something before."
 )
 
 _FIX_LINE = re.compile(r"^Fix:\s*", re.MULTILINE)
