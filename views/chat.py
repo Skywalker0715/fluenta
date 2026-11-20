@@ -8,6 +8,7 @@ import streamlit.components.v1 as components
 import db
 from services.llm import ask_tutor_ex, split_correction, speakable
 from services.fixparse import parse_fix, TAG_LABELS
+from services.format_text import format_bubble
 from services.stt import speech_to_text
 from services.tts import text_to_speech
 
@@ -156,7 +157,7 @@ else:
         role = "user" if message["role"] == "user" else "assistant"
         with st.chat_message(role):
             kelas = "chat-bubble user" if role == "user" else "chat-bubble assistant"
-            st.markdown(f'<div class="{kelas}">{html.escape(message["text"])}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="{kelas}">{format_bubble(message["text"])}</div>', unsafe_allow_html=True)
             if message.get("correction"):
                 hasil = parse_fix(message["correction"])
                 if hasil["structured"]:
