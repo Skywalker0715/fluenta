@@ -23,6 +23,7 @@
   <a href="#mulai-cepat">Mulai cepat</a> ·
   <a href="#konfigurasi">Konfigurasi</a> ·
   <a href="#pengembangan-dan-tes">Pengembangan dan tes</a> ·
+  <a href="#status-pengujian">Status pengujian</a> ·
   <a href="#batasan-yang-diketahui">Batasan</a> ·
   <a href="#lisensi">Lisensi</a>
 </p>
@@ -97,17 +98,21 @@ Mikrofon  ->  Deepgram (suara ke teks)  ->  Gemini (tutor dan koreksi)  ->  Elev
 ### Alur model cadangan
 
 ```
-Pesan pengguna -> Gemini -> sukses -> balasan
-                          -> gagal (429, 5xx, timeout, jaringan) -> Groq -> balasan + label "Dijawab model cadangan"
+Pesan pengguna -> Gemini (satu percobaan, tanpa percobaan ulang) -> sukses -> balasan
+                          -> gagal (429, 5xx, timeout, jaringan, atau pesan ramah yang dibungkus) -> Groq -> balasan + label "Dijawab model cadangan"
+                          -> gagal (400, 401, 403, 404) -> error ditampilkan, tidak dialihkan ke Groq
 ```
 
-- Fallback hanya untuk kegagalan kuota, server, timeout, atau jaringan. Error lain (misalnya 400 atau 404) tidak dialihkan dan tampil sebagai error seperti biasa.
+- Fallback hanya untuk kegagalan kuota (429), gangguan server (5xx), timeout, atau jaringan, termasuk error yang dibungkus dengan pesan ramah. Error 400, 401, 403, dan 404 tidak memicu fallback dan tampil sebagai error seperti biasa.
+- Saat Groq tersedia, chat memakai satu percobaan Gemini tanpa percobaan ulang; jika gagal dan layak fallback, langsung satu kali ke Groq.
+- Cooldown opsional (`FLUENTA_GEMINI_COOLDOWN_S`): setelah fallback ke Groq berhasil, Gemini dilewati selama jumlah detik yang diatur. Default `0` berarti cooldown mati.
+- Jika penjelasan pada baris Fix dari Groq bukan bahasa Indonesia, ada satu percobaan ulang ke Groq dengan instruksi menuliskan ulang.
 - Cadangan otomatis untuk chat tutor dan terjemahan teks pendek (jalur Gemini di halaman Terjemah); Dokumen teks hanya setelah persetujuan pengguna; mesin lokal tidak.
-- Kalau Groq juga gagal, pesan error dari Gemini yang ditampilkan.
+- Kalau Groq juga gagal, pesan error dari Gemini yang ditampilkan. Label kecil "Dijawab model cadangan" (chat), "Diterjemahkan model cadangan" (terjemahan), atau "Diproses model cadangan" (dokumen) ditampilkan saat cadangan aktif.
 
 Detail privasi ada di bagian "Model cadangan dan privasi" di bawah.
 
-Gemini adalah model utama. Kalau Gemini gagal (HTTP 429, gangguan server 5xx, timeout, atau gangguan jaringan), chat tutor dan terjemahan teks pendek (jalur Gemini di halaman Terjemah) otomatis dialihkan ke Groq (`openai/gpt-oss-120b`) supaya kamu tetap bisa berlatih. Balasan dari model cadangan diberi label kecil "Dijawab model cadangan" (chat), "Diterjemahkan model cadangan" (terjemahan), atau "Diproses model cadangan" (dokumen). Kalau Gemini normal, Groq tidak dipanggil sama sekali. Cadangan ini opsional: tanpa `GROQ_API_KEY`, aplikasi hanya memakai Gemini.
+Gemini adalah model utama. Kalau Gemini gagal (HTTP 429, gangguan server 5xx, timeout, atau gangguan jaringan), chat tutor dan terjemahan teks pendek (jalur Gemini di halaman Terjemah) dialihkan ke Groq (`openai/gpt-oss-120b`) supaya kamu tetap bisa berlatih. Kalau Gemini normal, Groq tidak dipanggil sama sekali. Cadangan ini opsional: tanpa `GROQ_API_KEY`, aplikasi hanya memakai Gemini.
 
 ## Mulai cepat
 
@@ -143,6 +148,7 @@ Semua nilai dibaca dari `.env`. Tidak ada kunci yang ditulis di dalam kode.
 | `ELEVEN_VOICE_ID` | Ya | ID suara kategori `premade`. Akun gratis tidak bisa memakai suara dari voice library lewat API (error 402) |
 | `ELEVEN_MODEL_ID` | Tidak | ID model ElevenLabs, default `eleven_turbo_v2_5` |
 | `FLUENTA_FORCE_FALLBACK` | Tidak | Sakelar uji: `1` memaksa model cadangan Groq (hanya untuk uji; contoh dalam `.env.example`) |
+| `FLUENTA_GEMINI_COOLDOWN_S` | Tidak | Opsional; jeda detik sebelum Gemini dipanggil lagi setelah fallback ke Groq berhasil. Default `0` = cooldown mati |
 | `GROQ_API_KEY` | Tidak | Kunci Groq untuk model cadangan. Kosongkan untuk menonaktifkan cadangan |
 | `GROQ_MODEL` | Tidak | Model cadangan di Groq, contoh `openai/gpt-oss-120b` |
 
@@ -171,6 +177,7 @@ fluenta/
 ├── services/           Logika bisnis (tanpa import Streamlit)
 │   ├── llm.py
 │   ├── fixparse.py
+│   ├── format_text.py  Format teks gelembung chat
 │   ├── practice.py
 │   ├── progress.py
 │   ├── stt.py
@@ -179,12 +186,18 @@ fluenta/
 │   └── docs.py
 ├── assets/             Logo, ikon, dan skrip kirim otomatis
 ├── docs/               Dokumen perencanaan, arsitektur, dan laporan evaluasi model
-├── scripts/            Skrip evaluasi dan tes model cadangan
-│   ├── eval_fallback_live.py     Evaluasi fallback langsung
-│   ├── eval_groq.py              Evaluasi model cadangan Groq
-│   ├── test_fallback_offline.py  Uji fallback offline
-│   ├── test_translate_fallback_offline.py  Uji fallback terjemah offline
-│   └── test_docs_fallback_offline.py  Uji fallback dokumen offline
+├── scripts/            Skrip evaluasi dan tes offline
+│   ├── eval_3bahasa_live.py        Evaluasi live tiga bahasa
+│   ├── eval_fallback_live.py       Evaluasi fallback langsung
+│   ├── eval_groq.py                Evaluasi model cadangan Groq
+│   ├── test_aturan_fragmen_offline.py  Uji aturan fragmen offline
+│   ├── test_docs_fallback_offline.py   Uji fallback dokumen offline
+│   ├── test_fallback_offline.py    Uji fallback chat offline
+│   ├── test_fallback_real_errors_offline.py  Uji error fallback asli
+│   ├── test_format_bubble_offline.py   Uji format gelembung chat
+│   ├── test_gemini_cooldown_offline.py Uji cooldown Gemini offline
+│   ├── test_penjelasan_offline.py  Uji penjelasan baris Fix
+│   └── test_translate_fallback_offline.py  Uji fallback terjemah offline
 ├── .streamlit/         Konfigurasi Streamlit
 ├── .env.example        Contoh konfigurasi
 ├── .gitignore          Aturan abaikan berkas (termasuk `.env`)
@@ -199,23 +212,41 @@ Folder `data/` dibuat otomatis saat aplikasi pertama dijalankan dan tidak ikut r
 
 Tes offline tidak memanggil API luar. Jalankan dari root repositori:
 
+- `python -m scripts.test_format_bubble_offline` — uji format gelembung chat (baris baru, pemisah Pinyin/Romaji/Arti, escape HTML).
+- `python -m scripts.test_aturan_fragmen_offline` — uji aturan pesan fragmen dalam prompt utama dan GROQ_EXTRA_RULES.
+- `python -m scripts.test_penjelasan_offline` — uji deteksi penjelasan baris Fix bukan bahasa Indonesia dan percobaan ulang Groq.
+- `python -m scripts.test_gemini_cooldown_offline` — uji cooldown Gemini setelah fallback ke Groq.
 - `python -m scripts.test_fallback_offline` — uji logika fallback chat (Gemini sukses, 429, 5xx, timeout, error 400 tidak dialihkan, GROQ_API_KEY kosong).
+- `python -m scripts.test_fallback_real_errors_offline` — uji fallback pada error asli SDK google-genai (429, 503, 504, 400, 404).
 - `python -m scripts.test_translate_fallback_offline` — uji logika fallback terjemah (kasus serupa, serta generate_text lama tidak pernah memanggil Groq).
 - `python -m scripts.test_docs_fallback_offline` — uji fallback dokumen (batas 10.000 karakter, pembagian bagian, jeda 3 detik, proses asli tidak memanggil Groq).
+
+Evaluasi live (memakai kuota API sungguhan):
+
+- `python -m scripts.eval_3bahasa_live` — evaluasi ask_tutor_ex untuk bahasa Inggris, Mandarin, dan Jepang pada 20 kalimat uji. Opsi: `--hanya ID1 ID2 ...` (hanya jalankan kasus dengan ID tersebut), `--jeda DETIK` (jeda antar panggilan, default 3), `--keluaran NAMA` (nama berkas laporan, default docs/eval_3bahasa_live.md).
+- `python -m scripts.eval_fallback_live` — evaluasi fallback langsung.
+- `python -m scripts.eval_groq` — evaluasi model cadangan Groq.
+
+Peringatan: `scripts.eval_3bahasa_live.py`, `scripts.eval_fallback_live.py`, dan `scripts.eval_groq.py` memanggil API sungguhan dan memakai kuota paket Anda. Jalankan hanya saat perlu dan pastikan kuota mencukupi.
 
 Uji paksa model cadangan:
 
 - Isi `FLUENTA_FORCE_FALLBACK=1` di `.env` (contoh tertulis dalam komentar `.env.example`). Dengan sakelar ini, Groq dipakai meski Gemini berhasil. Untuk halaman Dokumen, paksa cadangan hanya berlaku untuk dokumen teks, bukan gambar atau PDF.
 - Kembalikan nilai ke `0` atau hapus barisnya setelah selesai uji.
 
-Peringatan: `scripts.eval_fallback_live.py` dan `scripts.eval_groq.py` memanggil API sungguhan (Groq) dan memakai kuota paket Anda. Jalankan hanya saat perlu dan pastikan kuota mencukupi.
+## Status pengujian
+
+- Bahasa Inggris, Mandarin, dan Jepang diuji pada 20 kalimat uji lewat skrip evaluasi, dengan koreksi yang tepat pada kasus yang diuji.
+- Sampelnya kecil dan belum ditinjau penutur asli.
+- Pinyin dan Romaji ditulis model, dan pada sampel tinjauan manual ditemukan satu kesalahan Pinyin.
+- Pengenalan suara dan suara balasan untuk Mandarin dan Jepang belum diverifikasi.
+- Tidak ada penilaian pelafalan.
+- Sebagian uji dijawab model cadangan, bukan Gemini.
 
 ## Batasan yang diketahui
 
 - **Kuota gratis terbatas.** Gemini memiliki batas permintaan, dan ElevenLabs sekitar 10.000 karakter per bulan. Pada tier gratis, Google dapat memakai isi percakapan untuk meningkatkan produknya, jadi jangan kirim data pribadi.
 - **Kirim otomatis saat diam** memakai JavaScript yang bergantung pada elemen internal Streamlit, sehingga bisa berhenti bekerja setelah pembaruan Streamlit.
-- **Mandarin dan Jepang:** koreksi dan balasan teks sudah diuji, tetapi pengenalan ucapan dan kualitas suara untuk dua bahasa itu belum diverifikasi.
-- **Belum ada penilaian pelafalan** (pronunciation scoring).
 - Berjalan lokal untuk satu pengguna, tanpa login.
 - **Mutu cadangan dokumen:** mutu terjemahan dan rangkuman dokumen lewat model cadangan belum diuji luas.
 - **Dokumen non-teks tidak punya cadangan.** File gambar dan PDF diproses langsung oleh Gemini; model cadangan Groq hanya untuk teks (TXT, DOCX, MD).
