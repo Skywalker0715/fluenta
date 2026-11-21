@@ -13,6 +13,8 @@ def speech_to_text(audio_bytes: bytes, lang: str = "en", content_type: str = "au
         raise RuntimeError("DEEPGRAM_API_KEY belum diisi di .env")
     url = "https://api.deepgram.com/v1/listen"
     params = {"model": "nova-2", "language": lang, "smart_format": "true"}
+    if os.getenv("DEEPGRAM_MIP_OPT_OUT", "true") != "false":
+        params["mip_opt_out"] = "true"
     headers = {
         "Authorization": f"Token {DEEPGRAM_API_KEY}",
         "Content-Type": content_type,

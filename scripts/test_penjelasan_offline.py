@@ -26,6 +26,20 @@ def reset_cooldown():
     llm._gemini_cooldown_until = 0.0
 
 
+def force_fallback_nonaktif():
+    """Nonaktifkan paksaan fallback untuk butir tes ini; kembalikan nilai awal."""
+    sebelum = os.environ.get("FLUENTA_FORCE_FALLBACK")
+    os.environ["FLUENTA_FORCE_FALLBACK"] = "0"
+    return sebelum
+
+
+def pulihkan_force_fallback(sebelum):
+    if sebelum is None:
+        os.environ.pop("FLUENTA_FORCE_FALLBACK", None)
+    else:
+        os.environ["FLUENTA_FORCE_FALLBACK"] = sebelum
+
+
 # Pastikan jalur Groq tersedia di lingkungan tes (nilai tiruan, tidak dicetak).
 orig_groq_key = llm.GROQ_API_KEY
 orig_groq_model = llm.GROQ_MODEL
@@ -50,6 +64,7 @@ def gemini_gagal(*args, **kwargs):
 
 
 # (a) penjelasan Indonesia lolos pemeriksa -> False
+sebelum_ff = force_fallback_nonaktif()
 reset_cooldown()
 check(
     "a) penjelasan Indonesia lolos pemeriksa",
@@ -58,8 +73,10 @@ check(
     )
     is False,
 )
+pulihkan_force_fallback(sebelum_ff)
 
 # (b) penjelasan Jepang dinyatakan pelanggaran -> True
+sebelum_ff = force_fallback_nonaktif()
 reset_cooldown()
 check(
     "b) penjelasan Jepang dinyatakan pelanggaran",
@@ -68,8 +85,10 @@ check(
     )
     is True,
 )
+pulihkan_force_fallback(sebelum_ff)
 
 # (c) penjelasan Inggris dinyatakan pelanggaran -> True
+sebelum_ff = force_fallback_nonaktif()
 reset_cooldown()
 check(
     "c) penjelasan Inggris dinyatakan pelanggaran",
@@ -78,8 +97,10 @@ check(
     )
     is True,
 )
+pulihkan_force_fallback(sebelum_ff)
 
 # (d) kata Mandarin dalam kutipan di penjelasan Indonesia tidak dianggap pelanggaran -> False
+sebelum_ff = force_fallback_nonaktif()
 reset_cooldown()
 check(
     "d) kata Mandarin dalam kutipan tidak pelanggaran",
@@ -88,9 +109,11 @@ check(
     )
     is False,
 )
+pulihkan_force_fallback(sebelum_ff)
 
 
 # (e) pelanggaran Groq memicu tepat satu percobaan ulang (mock)
+sebelum_ff = force_fallback_nonaktif()
 reset_cooldown()
 panggilan_groq = {"n": 0}
 
@@ -125,9 +148,11 @@ except Exception as exc:
     )
 finally:
     restore()
+    pulihkan_force_fallback(sebelum_ff)
 
 
 # (f) tidak ada pelanggaran berarti tanpa percobaan ulang (1 panggilan)
+sebelum_ff = force_fallback_nonaktif()
 reset_cooldown()
 panggilan_groq = {"n": 0}
 
@@ -157,9 +182,11 @@ except Exception as exc:
     )
 finally:
     restore()
+    pulihkan_force_fallback(sebelum_ff)
 
 
 # (g) jalur Gemini tidak ikut percobaan ulang (Groq nol panggilan)
+sebelum_ff = force_fallback_nonaktif()
 reset_cooldown()
 panggilan_groq = {"n": 0}
 
@@ -194,9 +221,11 @@ except Exception as exc:
     )
 finally:
     restore()
+    pulihkan_force_fallback(sebelum_ff)
 
 
 # (h) parse_fix menangani pemisah tanpa spasi (kasus J3)
+sebelum_ff = force_fallback_nonaktif()
 reset_cooldown()
 from services.fixparse import parse_fix  # noqa: E402
 
@@ -209,6 +238,9 @@ check(
     and hasil["tag"] == "other",
     f" | hasil={hasil!r}",
 )
+
+
+pulihkan_force_fallback(sebelum_ff)
 
 
 # Ringkasan
